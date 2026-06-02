@@ -1,0 +1,104 @@
+stages:
+  - build
+  - infrastructure-plan
+  - infrastructure-apply
+  - application-deploy
+
+variables:
+  GCP_PROJECT_ID: "YOUR_GCP_PROJECT_ID"
+  GCP_REGION: "us-central1"
+  WIF_PROVIDER: "projects/1234567890/locations/global/workloadIdentityPools/gitlab-pool/providers/gitlab-provider"
+  SERVICE_ACCOUNT: "gitlab-ci@YOUR_GCP_PROJECT_ID.iam.gserviceaccount.com"
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  FRONTEND_IMAGE: "us-central1-docker.pkg.dev/$GCP_PROJECT_ID/zerodrift/frontend"
+  BACKEND_IMAGE: "us-central1-docker.pkg.dev/$GCP_PROJECT_ID/zerodrift/backend"
+
+# =========================================================
+# OIDC Authentication (Workload Identity Federation)
+# =========================================================
+.google-oidc-auth:
+  id_tokens:
+    GCP_OIDC_TOKEN:
+      aud: "https://iam.googleapis.com/$WIF_PROVIDER"
+  before_script:
+    - echo $GCP_OIDC_TOKEN > .ci_oidc_token.txt
+    - gcloud iam workload-identity-pools create-cred-config $WIF_PROVIDER --service-account=$SERVICE_ACCOUNT --output-file=.gcp_temp_cred.json --credential-source-file=.ci_oidc_token.txt
+    - export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/.gcp_temp_cred.json
+    - gcloud auth login --cred-file=$(pwd)/.gcp_temp_cred.json
+
+# =========================================================
+# 1. Build Stage
+# =========================================================
+build_images:
+  stage: build
+  image: google/cloud-sdk:latest
+  extends: .google-oidc-auth
+  script:
+    - gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+    - docker build -t $FRONTEND_IMAGE:$IMAGE_TAG -t $FRONTEND_IMAGE:latest ./web
+    - docker push $FRONTEND_IMAGE --all-tags
+    - docker build -t $BACKEND_IMAGE:$IMAGE_TAG -t $BACKEND_IMAGE:latest .
+    - docker push $BACKEND_IMAGE --all-tags
+
+# =========================================================
+# 2. Infrastructure-Plan Stage
+# =========================================================
+terraform_plan:
+  stage: infrastructure-plan
+  image: registry.gitlab.com/gitlab-org/terraform-images/standard:1.5
+  extends: .google-oidc-auth
+  script:
+    - cd gcp-deployment
+    - gitlab-terraform init
+    - gitlab-terraform plan
+    - gitlab-terraform plan-json
+  artifacts:
+    name: plan
+    paths:
+      - gcp-deployment/plan.cache
+    reports:
+      terraform: gcp-deployment/plan.json
+
+# =========================================================
+# 3. Infrastructure-Apply Stage (Manual Gatekeeper)
+# =========================================================
+terraform_apply:
+  stage: infrastructure-apply
+  image: registry.gitlab.com/gitlab-org/terraform-images/standard:1.5
+  extends: .google-oidc-auth
+  script:
+    - cd gcp-deployment
+    - gitlab-terraform apply
+  dependencies:
+    - terraform_plan
+  when: manual
+  only:
+    - main
+
+# =========================================================
+# 4. Application-Deploy Stage (Blue/Green Rollout)
+# =========================================================
+deploy_cloud_run:
+  stage: application-deploy
+  image: google/cloud-sdk:latest
+  extends: .google-oidc-auth
+  script:
+    - echo "Deploying ZeroDrift AI Engine..."
+    - gcloud run deploy zerodrift-engine 
+      --image $BACKEND_IMAGE:$IMAGE_TAG 
+      --region $GCP_REGION 
+      --project $GCP_PROJECT_ID 
+      --platform managed
+      --allow-unauthenticated
+    - echo "Deploying ZeroDrift SRE IDE..."
+    - gcloud run deploy zerodrift-ui 
+      --image $FRONTEND_IMAGE:$IMAGE_TAG 
+      --region $GCP_REGION 
+      --project $GCP_PROJECT_ID 
+      --platform managed
+      --allow-unauthenticated
+  needs:
+    - build_images
+    - terraform_apply
+  only:
+    - main
