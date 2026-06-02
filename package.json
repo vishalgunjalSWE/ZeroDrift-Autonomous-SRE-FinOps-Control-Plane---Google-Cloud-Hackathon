@@ -1,0 +1,8 @@
+{
+    "name": "zerodrift-enterprise",
+    "version": "6.0.0",
+    "description": "Autonomous Infrastructure FinOps SRE Agent (Next.js Edition)",
+    "scripts": {
+        "dev": "npx concurrently -c \"blue,green,yellow\" -n \"SERVER,UI,NGROK\" \"python server_webhook.py\" \"npm run dev --prefix web\" \"npx ngrok http 8000\""
+    }
+}
