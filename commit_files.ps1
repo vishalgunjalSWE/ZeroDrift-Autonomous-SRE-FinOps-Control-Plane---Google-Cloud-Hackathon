@@ -31,7 +31,7 @@ Write-Host ($statusOut | Out-String)
 # ----------------------------------------------------------------
 # Commit message lookup function
 # ----------------------------------------------------------------
-function Get-CommitMessage([string]$FilePath) {
+function Get-CommitMessage([string]$FilePath, [string]$FileType = "new") {
     $f    = $FilePath.Replace('\', '/')
     $base = [System.IO.Path]::GetFileName($f)
 
@@ -174,7 +174,9 @@ function Get-CommitMessage([string]$FilePath) {
     if ($f -match "src/app/topology-map/page\.tsx$")         { return "feat(topology): add topology map page with interactive D3 service dependency graph and health overlay" }
 
     # Fallback
-    return "feat: add $base to ZeroDrift Autonomous SRE and FinOps Control Plane"
+    $action = if ($FileType -eq "modified") { "update" } else { "add" }
+    $prefix = if ($FileType -eq "modified") { "fix" } else { "feat" }
+    return "$prefix`: $action $base in ZeroDrift Autonomous SRE and FinOps Control Plane"
 }
 
 # ----------------------------------------------------------------
@@ -229,7 +231,24 @@ $index        = 0
 foreach ($item in $commitList) {
     $index++
     $filePath  = $item.Path
-    $commitMsg = Get-CommitMessage -FilePath $filePath
+    $fileType  = $item.Type
+    $commitMsg = Get-CommitMessage -FilePath $filePath -FileType $fileType
+
+    # For modified files, replace "add" with "update" in the looked-up message
+    if ($fileType -eq "modified") {
+        $commitMsg = $commitMsg -replace "^feat\(([^)]+)\): add ", "fix(`$1): update "
+        $commitMsg = $commitMsg -replace "^feat: add ", "fix: update "
+        $commitMsg = $commitMsg -replace "^docs\(([^)]+)\): add ", "docs(`$1): update "
+        $commitMsg = $commitMsg -replace "^docs: add ", "docs: update "
+        $commitMsg = $commitMsg -replace "^build\(([^)]+)\): add ", "build(`$1): update "
+        $commitMsg = $commitMsg -replace "^style\(([^)]+)\): add ", "style(`$1): update "
+        $commitMsg = $commitMsg -replace "^ci: add ", "ci: update "
+        $commitMsg = $commitMsg -replace "^chore\(([^)]+)\): add ", "chore(`$1): update "
+        $commitMsg = $commitMsg -replace "^chore: add ", "chore: update "
+        $commitMsg = $commitMsg -replace "^asset\(([^)]+)\): add ", "asset(`$1): update "
+        $commitMsg = $commitMsg -replace "^ops: add ", "ops: update "
+        $commitMsg = $commitMsg -replace "^test: add ", "test: update "
+    }
 
     Write-Host "[$index/$($commitList.Count)] " -NoNewline -ForegroundColor White
     Write-Host $filePath -ForegroundColor Cyan
