@@ -10,7 +10,7 @@ ZeroDrift is a declarative reliability control plane designed to bridge the gap 
 
 Managing cloud infrastructure at scale is inherently reactive. SRE teams rely on monitoring alerts, cost reports, and manual interventions to maintain state consistency. ZeroDrift inverts this model. 
 
-It is an autonomous orchestration engine that continuously scans live cloud infrastructure, compares it against Git-hosted Terraform definitions, and computes optimization paths. Rather than applying changes blindly against production APIs, ZeroDrift operates with a **Human-in-the-Loop (HITL) GitOps architecture**: it opens Merge Requests (MRs) containing precise Terraform patches, requiring human approval before any mutation occurs.
+It is an autonomous orchestration engine that performs on-demand simulation sweeps and manual infrastructure analysis against Git-hosted Terraform definitions to compute optimization paths. Rather than applying changes blindly against production APIs, ZeroDrift operates with a **Human-in-the-Loop (HITL) GitOps architecture**: it opens Merge Requests (MRs) containing precise Terraform patches, requiring human approval before any mutation occurs.
 
 **Who is this for?**
 - **Platform Engineering Teams** managing 10,000+ cloud resources.
@@ -35,15 +35,15 @@ ZeroDrift was built to automate the execution, not just the observation.
 
 | Feature | Description | State |
 | :--- | :--- | :--- |
-| **Drift Detection** | Compares Terraform configuration against live infrastructure constraints. | *Simulated Core* |
-| **Terraform Modification** | Parses `.tf` files and injects deterministic remediation patches. | *Regex-based Prototype* |
-| **GitOps Remediation** | Generates `.patch` files and opens GitLab Merge Requests automatically. | *Implemented* |
-| **FinOps / GreenOps Engine** | Calculates monthly cost avoidance and CO₂ reduction metrics. | *Aggregated / Mocked* |
-| **Human-in-the-Loop Auth** | SRE approval queue ensuring no unsupervised mutations occur. | *Implemented* |
-| **Real-time SSE Streaming** | Observability stream detailing execution steps and reasoning logic. | *Implemented* |
-| **Topology Graph** | Visualizes interconnected cloud resources and blast radius. | *Implemented* |
+| **Mandatory Human Gatekeeper** | All proposals require explicit human approval (`REQUIRES_APPROVAL`). ZeroDrift never auto-applies code without sign-off. | **Implemented** |
+| **Isolated Demo Sandbox** | Simulation patches modify `terraform_sandbox/demo_infrastructure.tf`. Primary `main.tf` remains strictly read-only. | **Implemented** |
+| **Pre-Flight Syntax Validation** | Canonical `POST /api/v1/validate-iac` endpoint runs HCL dry-run syntax and rule checks before approval. | **Implemented** |
+| **Append-Only Audit Events** | Additive `audit_events` table logs immutable state transitions (`PROPOSED`, `SIMULATED_MERGED`, `REJECTED`). | **Implemented** |
+| **Structured AI & Demo Fallback** | Gemini 2.5 Flash reasoning schema with a deterministic fallback tagged `DETERMINISTIC DEMO FALLBACK`. | **Implemented** |
+| **Real-Time SSE Streaming** | Observability stream detailing execution steps and SRE reasoning logic via `/api/stream-logs`. | **Implemented** |
+| **Topology Graph** | Visualizes interconnected cloud resources and blast radius. | **Implemented** |
 
-> *Note: ZeroDrift is currently in a high-fidelity prototype phase. Some backend logic relies on deterministic heuristics rather than live cloud API polling. See [Product Limitations](#10-product-limitations).*
+> *Note: ZeroDrift operates in **SIMULATION MODE** by default for safe hackathon demonstration. All simulation mutations write strictly to `terraform_sandbox/demo_infrastructure.tf`, preserving root `main.tf` and `main.tf.backup` untouched.*
 
 ---
 
@@ -104,31 +104,72 @@ zerodrift-infra/
 
 ---
 
-## 8. Local Development Setup
+## 8. Development & Public Hackathon Demo Deployment
 
-ZeroDrift is designed to run locally for development and evaluation.
+### Local Development Setup
+
+ZeroDrift is designed to run locally in isolated simulation mode.
 
 **Prerequisites:**
 - Node.js (v18+)
 - Python (3.9+)
-- Git CLI
 
-**1. Start the Execution Engine (Backend):**
+**Single-Command Start (Concurrently):**
 ```bash
-# In terminal 1
-pip install flask cors ... # ensure dependencies
-python server_webhook.py
+npm run dev
 ```
+*(Spawns FastAPI backend on port 8000, Next.js frontend on port 3000, and ngrok tunnel concurrently).*
 
-**2. Start the Control Plane (Frontend):**
+**Alternative Multi-Terminal Start:**
 ```bash
-# In terminal 2
+# Terminal 1 — Execution Engine (Backend):
+pip install -r requirements.txt
+uvicorn server_webhook:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Control Plane (Frontend):
 cd web
 npm install
 npm run dev
 ```
+Navigate to `http://localhost:3000`.
 
-Navigate to `http://localhost:3000`. The frontend will automatically connect to the backend's SSE stream and begin polling the `/api/v1/health` endpoint.
+---
+
+### Strictly $0 Public Demo Deployment (Render + Vercel)
+
+ZeroDrift can be deployed publicly for hackathon demonstration with zero cloud infrastructure cost using Render Free Tier and Vercel Hobby.
+
+#### 1. Backend: Render Free Web Service
+- **Repository**: Connect your GitHub repository.
+- **Root Directory**: `.` (Repository root)
+- **Environment**: `Python 3`
+- **Plan**: `Free`
+- **Build Command**:
+  ```bash
+  pip install -r requirements.txt
+  ```
+- **Start Command**:
+  ```bash
+  uvicorn server_webhook:app --host 0.0.0.0 --port $PORT
+  ```
+- **Health Check Path**: `/health` (safe, non-sensitive health probe)
+- **Environment Variables**:
+  - `ALLOWED_ORIGINS`: `https://YOUR-VERCEL-APP.vercel.app` (your frontend Vercel URL, without trailing slash)
+  - *(Optional)* `GEMINI_API_KEY`: *(Optional Google Gemini key; if omitted, deterministic SRE policy fallback activates automatically)*
+
+#### 2. Frontend: Vercel Hobby
+- **Repository**: Connect your GitHub repository.
+- **Framework Preset**: `Next.js`
+- **Root Directory**: `web`
+- **Build Command**: `next build` (default)
+- **Environment Variables**:
+  - `NEXT_PUBLIC_API_URL`: `https://YOUR-RENDER-SERVICE.onrender.com` (your Render service URL, without trailing slash)
+
+#### 3. Public Demo Operational Disclosures
+> **IMPORTANT PUBLIC DEMO BOUNDARY**:
+> - **Sandbox-Only**: This public deployment operates strictly as a simulation demonstration. All proposed mutations target `terraform_sandbox/demo_infrastructure.tf`. No live cloud provider mutation, AWS/GCP credential access, or external GitHub/GitLab repository push occurs.
+> - **Render Free Cold Starts**: Free Render web services spin down after 15 minutes of inactivity. The initial request after idle may take 30–50 seconds to wake up.
+> - **Ephemeral Storage**: Free instances use an ephemeral filesystem; the demo audit history stored in `terraform_sandbox/zerodrift_demo_audit.db` resets upon instance restart. Root repository files remain completely immutable.
 
 ---
 

@@ -101,13 +101,137 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 app = FastAPI(title="ZeroDrift Enterprise FinOps Engine v7.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-ai_client = genai.Client()
+# --- CONFIGURABLE CORS MIDDLEWARE ---
+# Supports local development and production deployments (e.g., Vercel Hobby)
+allowed_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+if allowed_origins_env:
+    for origin in allowed_origins_env.split(","):
+        cleaned = origin.strip()
+        if cleaned and cleaned not in allowed_origins:
+            allowed_origins.append(cleaned)
+
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url and frontend_url.strip() not in allowed_origins:
+    allowed_origins.append(frontend_url.strip())
+
+vercel_url = os.getenv("VERCEL_URL")
+if vercel_url:
+    cleaned_v = vercel_url.strip()
+    if not cleaned_v.startswith("http"):
+        cleaned_v = f"https://{cleaned_v}"
+    if cleaned_v not in allowed_origins:
+        allowed_origins.append(cleaned_v)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+ai_client = None
+try:
+    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+        ai_client = genai.Client()
+except Exception as _e:
+    logger.warning(f"⚠️ [AI-ENGINE] Gemini client initialization deferred ({_e}). Demo fallback active.")
 
 PROJECT_PATH = "vishalgunjalSWE/zerodrift-infra"
 WEBHOOK_SECRET = os.getenv("GITLAB_WEBHOOK_SECRET", "super-secret-zerodrift-token")
 DB_FILE = os.path.join(BASE_DIR, "zerodrift_audit_ledger.db")
+
+# --- ENVIRONMENT & DEMO RUNTIME SANDBOX PATH CONFIGURATION ---
+IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+IS_PUBLIC_DEMO = bool(os.getenv("PUBLIC_DEMO", os.getenv("DEMO_MODE", "true")).lower() in ("true", "1", "yes"))
+
+# Safe runtime sandbox: on Render (or if DEMO_SANDBOX_DIR is configured),
+# runtime writes go only to the isolated ephemeral directory (default /tmp/zerodrift-demo)
+DEFAULT_SANDBOX_DIR = "/tmp/zerodrift-demo" if IS_RENDER else os.path.abspath(os.path.join(BASE_DIR, "terraform_sandbox"))
+SANDBOX_DIR = os.path.abspath(os.getenv("DEMO_SANDBOX_DIR", DEFAULT_SANDBOX_DIR))
+REPO_ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, "terraform_repo_root"))
+
+os.makedirs(SANDBOX_DIR, exist_ok=True)
+DEMO_TARGET_FILE = os.path.join(SANDBOX_DIR, "demo_infrastructure.tf")
+DEMO_BASELINE_FILE = os.path.join(SANDBOX_DIR, "demo_baseline.tf")
+DEMO_DB_FILE = os.path.join(SANDBOX_DIR, "zerodrift_demo_audit.db")
+
+# Strict isolation whitelist / protected files check:
+# Under no circumstances does a demo process read, write, initialize, or mutate root main.tf, main.tf.backup, or zerodrift_audit_ledger.db
+PROTECTED_ROOT_FILES = {
+    os.path.abspath(os.path.join(BASE_DIR, "main.tf")),
+    os.path.abspath(os.path.join(BASE_DIR, "main.tf.backup")),
+    os.path.abspath(os.path.join(BASE_DIR, "zerodrift_audit_ledger.db")),
+}
+
+def is_safe_sandbox_path(requested_path: str) -> tuple[bool, str]:
+    """Strictly validates that requested path resolves inside SANDBOX_DIR or REPO_ROOT_DIR.
+    Prevents path traversal and strictly protects root project assets.
+    """
+    target = os.path.abspath(os.path.join(BASE_DIR, requested_path.lstrip("/\\")))
+    if target in PROTECTED_ROOT_FILES:
+        return False, target
+    is_safe = (target.startswith(SANDBOX_DIR) or target.startswith(REPO_ROOT_DIR))
+    return is_safe, target
+
+DEMO_INITIAL_HCL = """provider "aws" {
+  region = "us-east-1"
+}
+
+provider "google" {
+  project = "zerodrift-enterprise"
+  region  = "us-central1"
+}
+
+resource "aws_instance" "web_frontend" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t3.2xlarge"
+  tags = {
+    Name = "Wasteful-Frontend"
+  }
+}
+
+resource "aws_ebs_volume" "legacy_storage" {
+  availability_zone = "us-east-1a"
+  size              = 500
+  type              = "gp2"
+}
+
+resource "google_compute_instance" "data_processor" {
+  name         = "legacy-data-proc"
+  machine_type = "n1-standard-8"
+  zone         = "us-central1-a"
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-11"
+    }
+  }
+
+  network_interface {
+    network = "default"
+  }
+}
+"""
+
+def init_demo_sandbox():
+    """Seeds isolated demo files into SANDBOX_DIR if not present, avoiding touching root assets."""
+    os.makedirs(SANDBOX_DIR, exist_ok=True)
+    if not os.path.exists(DEMO_BASELINE_FILE):
+        with open(DEMO_BASELINE_FILE, "w", encoding="utf-8") as f:
+            f.write(DEMO_INITIAL_HCL)
+    if not os.path.exists(DEMO_TARGET_FILE):
+        with open(DEMO_TARGET_FILE, "w", encoding="utf-8") as f:
+            f.write(DEMO_INITIAL_HCL)
+
+init_demo_sandbox()
 
 # ==========================================================
 # 3. GLOBAL STATE & CONFIGURATION
@@ -160,41 +284,78 @@ class AgenticFinOpsResponse(BaseModel):
     confidence_score: int = Field(description="0-100 integer representing the AI's confidence in this change.")
     reasoning_trace: str = Field(description="The raw XAI reasoning trace explaining exactly why this decision was made.")
 
+class IaCValidationRequest(BaseModel):
+    code: str
+
 # ==========================================================
-# 5. DATABASE — IMMUTABLE AUDIT LEDGER
+# 5. DATABASE — ISOLATED DEMO AUDIT LEDGER (zerodrift_demo_audit.db)
+#    NOTE: zerodrift_audit_ledger.db IS STRICTLY PRESERVED AND READ-ONLY.
 # ==========================================================
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
+def init_demo_db():
+    """Initializes isolated demo database in SANDBOX_DIR/zerodrift_demo_audit.db.
+    Seeds realistic initial FinOps audit history on first startup if empty.
+    """
+    conn = sqlite3.connect(DEMO_DB_FILE)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS audit_logs
                  (run_id TEXT PRIMARY KEY, timestamp TEXT, status TEXT,
-                  old_instance TEXT, new_instance TEXT, savings REAL, risk_level TEXT)''')
-    try: c.execute("ALTER TABLE audit_logs ADD COLUMN risk_score INTEGER")
-    except: pass
-    try: c.execute("ALTER TABLE audit_logs ADD COLUMN blast_radius_assessment TEXT")
-    except: pass
-    try: c.execute("ALTER TABLE audit_logs ADD COLUMN jira_ticket TEXT")
-    except: pass
-    try: c.execute("ALTER TABLE audit_logs ADD COLUMN confidence_score INTEGER")
-    except: pass
-    try: c.execute("ALTER TABLE audit_logs ADD COLUMN reasoning_trace TEXT")
-    except: pass
+                  old_instance TEXT, new_instance TEXT, savings REAL, risk_level TEXT,
+                  risk_score INTEGER, blast_radius_assessment TEXT, jira_ticket TEXT,
+                  confidence_score INTEGER, reasoning_trace TEXT)''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS audit_events
+                 (event_id TEXT PRIMARY KEY, run_id TEXT, timestamp TEXT, event_type TEXT,
+                  simulation_mode INTEGER, risk_score INTEGER, confidence_score INTEGER,
+                  savings REAL, action TEXT, patch_reference TEXT, details_json TEXT)''')
+
+    # Seed baseline records if database is freshly created in ephemeral container
+    c.execute("SELECT COUNT(*) FROM audit_logs")
+    if c.fetchone()[0] == 0:
+        sample_runs = [
+            ("ZDR-1744439001", "2026-10-11T12:00:00.000000", "SUCCESS", "aws_instance t3.2xlarge ($244.16/mo)", "aws_instance t3.medium ($30.37/mo)", 213.79, "LOW", 2, "Low impact compute resize", "COR-8492", 95, "Telemetry indicates idle CPU < 12%. Safe resize applied."),
+            ("ZDR-1744439002", "2026-10-11T13:30:00.000000", "SUCCESS", "google_compute_instance n1-standard-8 ($194.18/mo)", "google_compute_instance e2-medium ($24.46/mo)", 169.72, "LOW", 2, "Low impact compute resize", "COR-8493", 94, "Batch compute worker downsized without latency SLA penalty."),
+            ("ZDR-1744439003", "2026-10-11T15:00:00.000000", "SUCCESS", "aws_ebs_volume gp2 500GB ($50.00/mo)", "aws_ebs_volume gp3 500GB ($40.00/mo)", 10.00, "LOW", 1, "Storage migration without downtime", "COR-8494", 98, "EBS gp2 to gp3 storage upgrade saves 20% on storage costs.")
+        ]
+        c.executemany("INSERT INTO audit_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sample_runs)
+
+        sample_events = [
+            ("EVT-1001", "ZDR-1744439001", "2026-10-11T12:00:00.000000", "SIMULATED_MERGED", 1, 2, 95, 213.79, "APPROVED_BY_HUMAN", "demo_infrastructure.tf", json.dumps({"action": "approved"})),
+            ("EVT-1002", "ZDR-1744439002", "2026-10-11T13:30:00.000000", "SIMULATED_MERGED", 1, 2, 94, 169.72, "APPROVED_BY_HUMAN", "demo_infrastructure.tf", json.dumps({"action": "approved"})),
+            ("EVT-1003", "ZDR-1744439003", "2026-10-11T15:00:00.000000", "SIMULATED_MERGED", 1, 1, 98, 10.00, "APPROVED_BY_HUMAN", "demo_infrastructure.tf", json.dumps({"action": "approved"}))
+        ]
+        c.executemany("INSERT INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sample_events)
+
     conn.commit()
     conn.close()
 
-init_db()
+init_demo_db()
 
 def log_to_db(run_id, status, old_inst="N/A", new_inst="N/A", savings=0.0, risk="UNKNOWN", risk_score=0, blast_radius="", jira_ticket="", confidence_score=0, reasoning_trace=""):
-    conn = sqlite3.connect(DB_FILE)
+    """Logs run status to isolated demo audit database (DEMO_DB_FILE)."""
+    conn = sqlite3.connect(DEMO_DB_FILE)
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO audit_logs (run_id, timestamp, status, old_instance, new_instance, savings, risk_level, risk_score, blast_radius_assessment, jira_ticket, confidence_score, reasoning_trace) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
               (run_id, datetime.now().isoformat(), status, old_inst, new_inst, savings, risk, risk_score, blast_radius, jira_ticket, confidence_score, reasoning_trace))
     conn.commit()
     conn.close()
 
+def append_audit_event(run_id: str, event_type: str, action: str, risk_score: int = 0, confidence_score: int = 0, savings: float = 0.0, patch_ref: str = "demo_infrastructure.tf", details: dict = None):
+    """Appends an event record to isolated demo database audit_events table (DEMO_DB_FILE)."""
+    conn = sqlite3.connect(DEMO_DB_FILE)
+    c = conn.cursor()
+    import random
+    event_id = f"EVT-{int(time.time()*1000)}-{random.randint(100, 999)}"
+    details_json = json.dumps(details or {})
+    c.execute("INSERT INTO audit_events (event_id, run_id, timestamp, event_type, simulation_mode, risk_score, confidence_score, savings, action, patch_reference, details_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              (event_id, run_id, datetime.now().isoformat(), event_type, 1 if SIMULATION_MODE else 0, risk_score, confidence_score, savings, action, patch_ref, details_json))
+    conn.commit()
+    conn.close()
+
 async def async_log_to_db(run_id, status, old_inst="N/A", new_inst="N/A", savings=0.0, risk="UNKNOWN", risk_score=0, blast_radius="", jira_ticket="", confidence_score=0, reasoning_trace=""):
     await asyncio.to_thread(log_to_db, run_id, status, old_inst, new_inst, savings, risk, risk_score, blast_radius, jira_ticket, confidence_score, reasoning_trace)
 
+async def async_append_audit_event(run_id: str, event_type: str, action: str, risk_score: int = 0, confidence_score: int = 0, savings: float = 0.0, patch_ref: str = "demo_infrastructure.tf", details: dict = None):
+    await asyncio.to_thread(append_audit_event, run_id, event_type, action, risk_score, confidence_score, savings, patch_ref, details)
 
 import random
 async def create_jira_change_ticket(run_id: str, risk_score: int) -> str:
@@ -212,6 +373,9 @@ PROCESSING_TIME = Histogram('zerodrift_processing_seconds', 'Time taken to fix d
 # 7. CHATOPS — NOC/SOC EMAIL ALERTS & SLACK INTEGRATION
 # ==========================================================
 def _send_email_sync(run_id, old_type, new_type, savings, risk, status, mr_url="", risk_score=5):
+    if SIMULATION_MODE or IS_PUBLIC_DEMO or IS_RENDER:
+        logger.info(f"📧 [SANDBOX GUARD] Email dispatch skipped for run {run_id} (simulation active).")
+        return
     sender, password = os.getenv("GMAIL_USER"), os.getenv("GMAIL_APP_PASSWORD")
     if not sender or not password:
         logger.warning("SMTP credentials missing. SOC alert skipped.")
@@ -390,10 +554,8 @@ def terraform_validate(code: str) -> dict:
     warnings = []
 
     # Check for required structural elements
-    if "provider" not in code:
-        errors.append("Missing provider block declaration.")
-    if "resource" not in code:
-        errors.append("Missing resource block declaration.")
+    if "resource" not in code and "module" not in code:
+        errors.append("Missing resource or module block declaration.")
 
     # Check balanced braces
     open_braces = code.count("{")
@@ -419,24 +581,31 @@ def terraform_validate(code: str) -> dict:
     }
 
 # ==========================================================
-# 9. ENTERPRISE WORKFLOW ENGINE
-# ==========================================================
 task_queue = asyncio.Queue()
+background_tasks = set()
 
 async def process_queue():
+    logger.info("⚙️ [WORKER] SRE Queue Worker loop initialized and listening.")
     while True:
-        run_id = await task_queue.get()
-        logger.info(f"🔄 [WORKER] Pulled task {run_id} from SRE worker queue.")
-        await run_autonomous_workflow(run_id)
-        task_queue.task_done()
+        try:
+            run_id = await task_queue.get()
+            logger.info(f"🔄 [WORKER] Pulled task {run_id} from SRE worker queue.")
+            await run_autonomous_workflow(run_id)
+            task_queue.task_done()
+        except asyncio.CancelledError:
+            logger.info("⚙️ [WORKER] SRE Queue Worker loop received shutdown signal.")
+            break
+        except Exception as e:
+            logger.error(f"❌ [WORKER CRASH] Worker loop encountered unexpected error: {e}")
+            await asyncio.sleep(1)
 
 def build_isolated_subgraph(base_dir: str, target_resource_type: str = "rds") -> str:
     """
-    Simulates a static AST mapping function that traces variable dependencies across files.
+    Simulates a context isolation mapping function that traces variable dependencies across files.
     Recursively scans base_dir using os.walk and extracts only the isolated sub-graph
     (the drifted resource and its immediate dependencies) to prevent LLM context collapse.
     """
-    chunked_code = "### ENTERPRISE AST CHUNK: ISOLATED SUB-GRAPH ###\n"
+    chunked_code = "### ENTERPRISE CONTEXT ISOLATION: ISOLATED SUB-GRAPH ###\n"
     
     all_tf_files = []
     for root, dirs, files in os.walk(base_dir):
@@ -447,7 +616,7 @@ def build_isolated_subgraph(base_dir: str, target_resource_type: str = "rds") ->
     for filepath in all_tf_files:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
-            # AST Trace Simulation: Only include files related to the drifted target (e.g. rds) 
+            # Context Isolation Trace: Only include files related to the drifted target (e.g. rds) 
             # and its direct dependencies (vpc), as well as the prod environment invoking them.
             if target_resource_type in filepath.lower() or "prod" in filepath.lower() or "vpc" in filepath.lower():
                 rel_path = os.path.relpath(filepath, base_dir)
@@ -471,16 +640,20 @@ async def run_autonomous_workflow(run_id: str):
 
     try:
         # --- STEP 1: SCAN REPOSITORY ---
-        logger.info("📥 [SCAN] Executing Enterprise Semantic AST Aggregation via os.walk...")
-        tf_dir = os.path.join(BASE_DIR, "terraform_repo_root")
+        logger.info("📥 [SCAN] Executing Enterprise Context Isolation via os.walk...")
         
-        # Build the isolated subgraph instead of loading everything
-        actual_code = build_isolated_subgraph(tf_dir, target_resource_type="rds")
+        # Read from demo_infrastructure.tf if present, otherwise fallback to subgraph
+        if os.path.exists(DEMO_TARGET_FILE):
+            with open(DEMO_TARGET_FILE, "r", encoding="utf-8") as f:
+                actual_code = f.read()
+        else:
+            tf_dir = os.path.join(BASE_DIR, "terraform_repo_root")
+            actual_code = build_isolated_subgraph(tf_dir, target_resource_type="rds")
         
-        await asyncio.sleep(1.0)
-        logger.info("📥 [SCAN] Generated isolated sub-graph via AST chunking for LLM reasoning.")
+        await asyncio.sleep(0.8)
+        logger.info("📥 [SCAN] Generated isolated sub-graph via context isolation for LLM reasoning.")
 
-        # --- STEP 2: GEMINI STRUCTURED REASONING ---
+        # --- STEP 2: GEMINI STRUCTURED REASONING WITH DETERMINISTIC FALLBACK ---
         logger.info("🧠 [AI-ENGINE] Engaging Gemini 2.5 Flash structured reasoning...")
 
         ec2_tgt = ACTIVE_POLICIES.get("ec2_target_size", "t3.medium")
@@ -495,46 +668,26 @@ async def run_autonomous_workflow(run_id: str):
             policies += f"- DOWNSIZE GCP COMPUTE: google_compute_instance n1-standard-8 → {gcp_tgt}\n"
         if ACTIVE_POLICIES.get("upgrade_ebs"):
             policies += f"- UPGRADE EBS: aws_ebs_volume gp2 → {ebs_tgt} (keep size same)\n"
-        if ACTIVE_POLICIES.get("enforce_tags"):
-            policies += "- ENFORCE TAGS: Add ManagedBy = \"ZeroDrift\" tag to all resources.\n"
 
         prompt = f"""
 *** SYSTEM ROLE: L7 PRINCIPAL SRE / DISTINGUISHED ARCHITECT ***
 
-We are upgrading ZeroDrift from an "Automation Tool" to a "Cognitive SRE Partner." 
+You are acting as an L7 SRE. Optimize the following Terraform code for cost and reliability:
+- AWS EC2 target: {ec2_tgt}
+- GCP Compute target: {gcp_tgt}
+- AWS EBS target: {ebs_tgt}
 
-### 1. INTELLIGENCE UPGRADE (Backend Logic)
-- Implement "Explainable AI" (XAI): Every `AgenticFinOpsResponse` MUST include a `confidence_score` (0-100 integer) and `reasoning_trace` (detailed string). 
-- Add a "Circuit Breaker": If confidence_score < 70%, the system will flag the MR as "Requires Principal Review" and stop execution.
+PRICING REFERENCE:
+- AWS EC2 t3.2xlarge ($244.16/mo) -> t3.medium ($30.37/mo), saves $213.79
+- AWS EBS gp2 500GB ($50.00/mo) -> gp3 500GB ($40.00/mo), saves $10.00
+- GCP n1-standard-8 ($194.18/mo) -> e2-medium ($24.46/mo), saves $169.72
 
-### 2. OPERATIONAL EXCELLENCE
-- "Context Enrichment": Before making any change, the agent must pull the last 24 hours of logs for the target resource to ensure no active incidents are occurring. (Simulate this context enrichment in your reasoning trace). If an incident is active, or if ambiguity is high, drop confidence_score below 70 to auto-abort.
-
-You are acting as an L7 SRE. You must optimize the following Terraform code to match these targets:
-- AWS EC2: {ACTIVE_POLICIES['ec2_target_size']}
-- GCP Compute: {ACTIVE_POLICIES['gcp_target_type']}
-- AWS EBS: {ACTIVE_POLICIES['ebs_target_type']}
-
-PRICING REFERENCE (use these exact figures):
-- AWS EC2 t3.2xlarge: $244.16/mo → t3.medium: $30.37/mo (saves $213.79)
-- AWS EBS gp2 500GB: $50.00/mo → gp3 500GB: $40.00/mo (saves $10.00)
-- GCP n1-standard-8: $194.18/mo → e2-medium: $24.46/mo (saves $169.72)
-
-CRITICAL RULE:
-Score risk_score 1-3 (e.g. EBS upgrade) as Low Risk. Score 8-10 (e.g. Database changes) as High Risk.
-
-Analyze this Terraform code. Return optimized code and per-resource savings breakdown.
-
-Terraform Code:
+Code:
 {actual_code}"""
 
-        # --- Exponential Backoff Retry Loop for Rate Limits ---
-        max_retries = 3
-        base_delay = 3
-        response = None
-        for attempt in range(max_retries):
+        ai_data = None
+        if ai_client and not SIMULATION_MODE:
             try:
-                # Execute in thread to prevent event loop blocking
                 response = await asyncio.to_thread(
                     ai_client.models.generate_content,
                     model='gemini-2.5-flash',
@@ -545,24 +698,70 @@ Terraform Code:
                         response_schema=AgenticFinOpsResponse
                     )
                 )
-                break
-            except Exception as e:
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "Quota exceeded" in str(e):
-                    if attempt == max_retries - 1:
-                        logger.error(f"❌ [AI-ENGINE] Rate limit exceeded after {max_retries} attempts.")
-                        raise e
-                    delay = base_delay * (2 ** attempt)
-                    logger.warning(f"⚠️ Quota Exceeded. Retrying in {delay} seconds...")
-                    await asyncio.sleep(delay)
+                ai_data = json.loads(response.text)
+                if not ai_data.get("updated_terraform_code") and not ai_data.get("updated_code"):
+                    ai_data = None
                 else:
-                    raise e
+                    source_tag = "AI ANALYSIS"
+            except Exception as e:
+                logger.warning(f"⚠️ [AI-ENGINE] Gemini unavailable ({e}). Triggering DETERMINISTIC DEMO FALLBACK.")
+                ai_data = None
 
+        if not ai_data:
+            source_tag = "DETERMINISTIC DEMO FALLBACK"
+            ai_data = {
+                "updated_terraform_code": """# ZeroDrift Optimized Demo Patch (SIMULATION TARGET)
+provider "aws" {
+  region = "us-east-1"
+}
 
-        try:
-            ai_data = json.loads(response.text)
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ [AI-ENGINE] Malformed JSON payload from Gemini: {e}")
-            raise ValueError("Failed to parse Gemini response as JSON.")
+provider "google" {
+  project = "zerodrift-prod"
+  region  = "us-central1"
+}
+
+resource "aws_instance" "web_frontend" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t3.medium"
+
+  tags = {
+    Name        = "ZeroDrift-Demo-Frontend"
+    Environment = "production"
+    ManagedBy   = "ZeroDrift-Simulation"
+  }
+}
+
+resource "aws_ebs_volume" "analytics_storage" {
+  availability_zone = "us-east-1a"
+  size              = 500
+  type              = "gp3"
+}
+
+resource "google_compute_instance" "analytics_worker" {
+  name         = "analytics-worker-prod"
+  machine_type = "e2-medium"
+  zone         = "us-central1-a"
+}""",
+                "identified_waste": "AWS EC2 t3.2xlarge & GCP Compute n1-standard-8 over-provisioned",
+                "optimized_target": "AWS EC2 t3.medium & GCP Compute e2-medium",
+                "risk_level": "LOW",
+                "risk_score": 2,
+                "blast_radius_assessment": "Low impact. Single compute instance resize in non-db tier.",
+                "rollback_plan": "Revert demo_infrastructure.tf instance types to previous baseline size.",
+                "savings": 383.51,
+                "aws_savings": 213.79,
+                "gcp_savings": 169.72,
+                "reasoning": "[DETERMINISTIC DEMO FALLBACK] Detected idle EC2/GCP compute. Resizing yields 80%+ savings with zero SLA risk.",
+                "confidence_score": 95,
+                "reasoning_trace": "[DETERMINISTIC DEMO FALLBACK] Telemetry analysis: 14-day average CPU < 12%. Safe to downsize to t3.medium and e2-medium.",
+                "is_stateless_workload": True,
+                "spot_instance_recommendation": "Recommend spot instances for stateless worker node.",
+                "optimizations": [
+                    {"resource_type": "aws_instance", "resource_name": "web_frontend", "old_config": "t3.2xlarge", "new_config": "t3.medium", "cloud_provider": "AWS", "monthly_savings": 213.79},
+                    {"resource_type": "google_compute_instance", "resource_name": "analytics_worker", "old_config": "n1-standard-8", "new_config": "e2-medium", "cloud_provider": "GCP", "monthly_savings": 169.72}
+                ]
+            }
+
         updated_code = ai_data["updated_terraform_code"]
         old_instance = ai_data["identified_waste"]
         new_instance = ai_data["optimized_target"]
@@ -573,113 +772,61 @@ Terraform Code:
         gcp_savings = float(ai_data.get("gcp_savings", 0.0))
         reasoning = ai_data["reasoning"]
         optimizations = ai_data.get("optimizations", [])
-
         is_stateless = ai_data.get("is_stateless_workload", False)
         spot_rec = ai_data.get("spot_instance_recommendation", "")
-        risk_score = int(ai_data.get("risk_score", 5))
+        risk_score = int(ai_data.get("risk_score", 3))
+        confidence_score = int(ai_data.get("confidence_score", 90))
         blast_radius = ai_data.get("blast_radius_assessment", "Unknown")
         jira_ticket = await create_jira_change_ticket(run_id, risk_score)
 
-        logger.info(f"🧠 [AI-ENGINE] Analysis complete: {old_instance} → {new_instance}")
-        if is_stateless:
-            logger.info("🚀 [FINOPS] Stateless workload detected. Spot Arbitrage recommended!")
-        logger.info(f"💰 [AI-ENGINE] Savings: ${savings:.2f}/mo (AWS: ${aws_savings:.2f}, GCP: ${gcp_savings:.2f}) | Risk: {risk_level}")
+        conf_label = "AI Confidence" if source_tag == "AI ANALYSIS" else "Demo Recommendation Confidence"
+        logger.info(f"🧠 [{source_tag}] Proposal generated: {old_instance} → {new_instance}")
+        logger.info(f"💰 [{source_tag}] Savings: ${savings:.2f}/mo | Risk Score: {risk_score}/10 | {conf_label}: {confidence_score}%")
 
         # --- STEP 3: TERRAFORM DRY-RUN VALIDATION ---
-        logger.info("🛡️ [VALIDATE] Running terraform validate dry-run on optimized payload...")
-        await asyncio.sleep(0.8)
+        logger.info("🛡️ [VALIDATE] Executing Static HCL pre-flight guardrail on optimized payload...")
+        await asyncio.sleep(0.5)
         validation = terraform_validate(updated_code)
-
         if validation["status"] == "FAIL":
-            error_list = "; ".join(validation["errors"])
-            logger.error(f"❌ [VALIDATE] terraform validate → FAIL ({error_list})")
-            logger.info("🧠 [AI-ENGINE] Retrying Gemini with self-correction prompt...")
+            logger.error(f"❌ [VALIDATE] Static HCL pre-flight guardrail → FAIL ({validation['errors']})")
+            raise Exception(f"Static HCL pre-flight guardrail failed: {validation['errors']}")
 
-            retry_prompt = f"""The previous optimization output failed terraform validation with these errors: {error_list}
+        logger.info(f"✅ [VALIDATE] Static HCL pre-flight guardrail passed ({validation['resources_validated']} resources, 0 errors)")
 
-Please fix the Terraform code and return valid HCL without any markdown formatting.
+        # --- STEP 4: MANDATORY HUMAN-IN-THE-LOOP QUARANTINE ---
+        # PRODUCT RULE: ZeroDrift is not an auto-apply bot. Every proposal requires human approval.
+        final_status = "REQUIRES_APPROVAL"
+        mr_url = f"https://gitlab.com/{PROJECT_PATH}/-/merge_requests/sandbox-{run_id}"
 
-Original code:
-{actual_code}"""
-            retry_response = ai_client.models.generate_content(
-                model='gemini-2.5-flash', contents=retry_prompt,
-                config=types.GenerateContentConfig(temperature=0.0, response_mime_type="application/json", response_schema=AgenticFinOpsResponse)
-            )
-            ai_data = json.loads(retry_response.text)
-            updated_code = ai_data["updated_terraform_code"]
-            validation = terraform_validate(updated_code)
-            if validation["status"] == "FAIL":
-                raise Exception(f"Terraform validation failed after retry: {validation['errors']}")
+        logger.info(f"🛑 [HITL GATEKEEPER] Run {run_id} quarantined. Human SRE approval explicitly required.")
 
-        logger.info(f"✅ [VALIDATE] terraform validate → PASS ({validation['resources_validated']} resources, 0 errors)")
-
-        # --- STEP 4: GITOPS — CREATE MERGE REQUEST ---
-        mr_url = f"https://gitlab.com/{PROJECT_PATH}/-/merge_requests/mock-{run_id}"
-        mr_iid = None
-
-        if SIMULATION_MODE:
-            logger.info("🚀 [GITOPS] Creating local mock GitLab patch branch (SIMULATION).")
-            await asyncio.sleep(1.5)
-            logger.info(f"🚀 [GITOPS] Mock Merge Request generated. Awaiting SRE approval.")
-        else:
-            logger.info(f"🌿 [GITOPS] Creating remote branch: {BRANCH_NAME}...")
-            npx_command = "npx.cmd" if sys.platform == "win32" else "npx"
-            server_params = StdioServerParameters(command=npx_command, args=["-y", "@modelcontextprotocol/server-gitlab"], env=os.environ.copy())
-            async with stdio_client(server_params) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
-                    await session.call_tool("create_branch", arguments={"project_id": PROJECT_PATH, "branch": BRANCH_NAME, "ref": "main"})
-                    await session.call_tool("push_files", arguments={
-                        "project_id": PROJECT_PATH, "branch": BRANCH_NAME,
-                        "commit_message": f"FinOps Auto-Fix: {old_instance} → {new_instance} ({run_id})",
-                        "files": [{"action": "update", "file_path": "main.tf", "content": updated_code}]
-                    })
-                    mr_result = await session.call_tool("create_merge_request", arguments={
-                        "project_id": PROJECT_PATH, "title": f"Auto-Fix: FinOps Optimization ({run_id})",
-                        "source_branch": BRANCH_NAME, "target_branch": "main",
-                        "description": f"Waste: {old_instance} → {new_instance}. Savings: ${savings}/mo."
-                    })
-                    mr_data = json.loads(mr_result.content[0].text)
-                    mr_url = mr_data.get("web_url", mr_url)
-                    mr_iid = mr_data.get("iid")
-
-        # --- STEP 5: RECORD SUCCESS ---
         elapsed = round(time.time() - start_time, 1)
-        AGENT_RUNS.labels(status='success').inc()
+        AGENT_RUNS.labels(status='requires_approval').inc()
         COST_SAVINGS.inc(savings)
         PROCESSING_TIME.observe(elapsed)
 
-        # HITL Gatekeeper: high-risk resource types auto-quarantine to REQUIRES_APPROVAL
-        HIGH_RISK_RESOURCE_TYPES = ["aws_db_instance", "aws_iam", "aws_security_group", "aws_rds", "aws_elasticache"]
-        touches_high_risk = any(
-            any(hr in opt.get("resource_type", "") for hr in HIGH_RISK_RESOURCE_TYPES)
-            for opt in (optimizations or [])
-        )
-        if touches_high_risk or risk_score >= 8:
-            final_status = "REQUIRES_APPROVAL"
-            logger.info(f"🛑 [HITL] High-risk resource detected. Run {run_id} quarantined — Manual approval required.")
-        elif risk_score <= 3:
-            final_status = "AUTO_MERGED"
-        else:
-            final_status = "SUCCESS"
-
-        await async_log_to_db(run_id, final_status, old_instance, new_instance, savings, risk_level, risk_score, blast_radius, jira_ticket, int(ai_data.get("confidence_score", 0)), ai_data.get("reasoning_trace", ""))
+        await async_log_to_db(run_id, final_status, old_instance, new_instance, savings, risk_level, risk_score, blast_radius, jira_ticket, confidence_score, ai_data.get("reasoning_trace", ""))
+        await async_append_audit_event(run_id, "REQUIRES_APPROVAL", "PROPOSED_FOR_HUMAN_REVIEW", risk_score, confidence_score, savings, "demo_infrastructure.tf", {"source_tag": source_tag, "old": old_instance, "new": new_instance})
         await send_email_alert(run_id, old_instance, new_instance, savings, risk_level, final_status, mr_url, risk_score)
 
         run_details_cache[run_id] = {
-            "status": "SUCCESS",
+            "run_id": run_id,
+            "status": final_status,
+            "source_tag": source_tag,
             "old_instance": old_instance,
             "new_instance": new_instance,
             "savings": savings,
             "aws_savings": aws_savings,
             "gcp_savings": gcp_savings,
             "risk_level": risk_level,
+            "risk_score": risk_score,
+            "confidence_score": confidence_score,
             "rollback_plan": rollback,
             "reasoning": reasoning,
+            "reasoning_trace": ai_data.get("reasoning_trace", ""),
             "optimizations": optimizations,
             "validation": validation,
             "mr_url": mr_url,
-            "mr_iid": mr_iid,
             "timestamp": datetime.now().isoformat(),
             "elapsed_seconds": elapsed,
             "updated_code": updated_code,
@@ -687,30 +834,23 @@ Original code:
             "original_code": actual_code,
             "is_stateless_workload": is_stateless,
             "spot_instance_recommendation": spot_rec,
-            "risk_score": risk_score,
             "blast_radius": blast_radius,
             "jira_ticket": jira_ticket,
-            "confidence_score": int(ai_data.get("confidence_score", 0)),
-            "reasoning_trace": ai_data.get("reasoning_trace", ""),
-            "touches_high_risk": touches_high_risk,
-            "status": final_status
+            "patch_reference": "terraform_sandbox/demo_infrastructure.tf"
         }
         
-        # Trigger Enterprise ChatOps alert
         await dispatch_chatops_alert(run_id, optimizations, savings, risk_level)
-        
-        logger.info(f"✅ [SUCCESS] Run {run_id} complete in {elapsed}s. Awaiting SRE approval.")
+        logger.info(f"✅ [QUEUED FOR APPROVAL] Run {run_id} ready for pre-flight review in {elapsed}s.")
 
     except Exception as e:
         AGENT_RUNS.labels(status='failed').inc()
         await async_log_to_db(run_id, "FAILED")
-        await send_email_alert(run_id, "Unknown", "Unknown", 0.0, "HIGH", "FAILED", "", 10)
+        await async_append_audit_event(run_id, "FAILED", "RUN_FAILED", 10, 0, 0.0, "demo_infrastructure.tf", {"error": str(e)})
         run_details_cache[run_id] = {
             "status": "FAILED",
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
-        logger.error(f"❌ [CRITICAL] Run {run_id} aborted: {str(e)}")
     finally:
         async with lock_mutex:
             lock_key = f"main.tf:{run_id}"
@@ -721,7 +861,11 @@ Original code:
 # ==========================================================
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(process_queue())
+    if not any(t for t in background_tasks if not t.done()):
+        task = asyncio.create_task(process_queue())
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
+        logger.info("⚙️ [WORKER] Registered strong lifecycle reference for SRE Queue Worker task.")
     logger.info("🚀 ZeroDrift Enterprise FinOps Engine v7.0 — ONLINE")
 
 # --- Real-Time Execution Stream (SSE) ---
@@ -793,23 +937,34 @@ async def get_iac_tree():
 
 @app.post("/api/save-code")
 async def save_code(update: CodeUpdate):
+    is_safe, target = is_safe_sandbox_path(os.path.join("terraform_repo_root", update.path))
+    if not is_safe:
+        raise HTTPException(status_code=403, detail="Forbidden: Cannot access paths outside sandbox bounds.")
+    
     logger.info(f"💾 [SRE-OPS] Saving sandbox code to {update.path}...")
-    local_path = os.path.join(BASE_DIR, "terraform_repo_root", update.path)
-    os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    with open(local_path, "w") as f:
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
         f.write(update.code)
     logger.info(f"✅ [SUCCESS] {update.path} updated.")
     return {"status": "success"}
 
 @app.get("/api/active-code")
 async def get_active_code(path: str = "environments/prod/main.tf"):
-    local_path = os.path.join(BASE_DIR, "terraform_repo_root", path)
-    if not os.path.exists(local_path):
+    is_safe, target = is_safe_sandbox_path(os.path.join("terraform_repo_root", path))
+    if not is_safe:
+        raise HTTPException(status_code=403, detail="Forbidden: Cannot access paths outside sandbox bounds.")
+    if not os.path.exists(target):
         return {"code": f"# File not found: {path}"}
-    with open(local_path, "r") as f:
+    with open(target, "r", encoding="utf-8") as f:
         return {"code": f.read()}
 
-# --- SRE Merge Approval ---
+# --- Pre-Flight Validation Endpoint ---
+@app.post("/api/v1/validate-iac")
+async def api_validate_iac(payload: IaCValidationRequest):
+    """Canonical endpoint for pre-flight HCL syntax and rule validation."""
+    return terraform_validate(payload.code)
+
+# --- SRE Merge Approval (Human-in-the-Loop Gatekeeper) ---
 @app.post("/api/approve-mr/{run_id}")
 async def approve_mr(run_id: str):
     global SIMULATION_MODE, PROJECT_PATH
@@ -819,16 +974,19 @@ async def approve_mr(run_id: str):
         raise HTTPException(status_code=404, detail="Run not found.")
 
     details = run_details_cache[run_id]
-    updated_code = details.get("updated_code")
+    updated_code = details.get("updated_code", details.get("updated_terraform_code", ""))
 
     try:
         if SIMULATION_MODE:
-            logger.info("💾 [SRE-OPS] Applying optimized code to local main.tf (SIMULATION merge)...")
-            with open(os.path.join(BASE_DIR, "main.tf"), "w") as f:
+            logger.info("💾 [SRE-OPS] Applying patch to ISOLATED DEMO TARGET (terraform_sandbox/demo_infrastructure.tf)...")
+            os.makedirs(SANDBOX_DIR, exist_ok=True)
+            with open(DEMO_TARGET_FILE, "w", encoding="utf-8") as f:
                 f.write(updated_code)
-            details["status"] = "MERGED"
-            await async_log_to_db(run_id, "MERGED", details.get("old_instance"), details.get("new_instance"), details.get("savings"), details.get("risk_level"))
-            logger.info(f"✅ [SUCCESS] Run {run_id} merged to production.")
+            
+            details["status"] = "SIMULATED_MERGED"
+            await async_log_to_db(run_id, "SIMULATED_MERGED", details.get("old_instance"), details.get("new_instance"), details.get("savings"), details.get("risk_level"), details.get("risk_score", 0), details.get("blast_radius", ""), details.get("jira_ticket", ""), details.get("confidence_score", 0), details.get("reasoning_trace", ""))
+            await async_append_audit_event(run_id, "SIMULATED_MERGED", "APPROVED_BY_HUMAN", details.get("risk_score", 0), details.get("confidence_score", 0), details.get("savings", 0.0), "terraform_sandbox/demo_infrastructure.tf", {"action": "approved", "target_file": "demo_infrastructure.tf"})
+            logger.info(f"✅ [SIMULATION MERGE] Patch written to isolated sandbox target for run {run_id}.")
         else:
             mr_iid = details.get("mr_iid")
             if mr_iid:
@@ -839,14 +997,11 @@ async def approve_mr(run_id: str):
                     async with ClientSession(rs, ws) as session:
                         await session.initialize()
                         await session.call_tool("merge_merge_request", arguments={"project_id": PROJECT_PATH, "merge_request_iid": int(mr_iid)})
-                details["status"] = "MERGED"
-                await async_log_to_db(run_id, "MERGED", details.get("old_instance"), details.get("new_instance"), details.get("savings"), details.get("risk_level"))
-                logger.info(f"✅ [SUCCESS] GitLab MR #{mr_iid} merged.")
-            else:
-                details["status"] = "MERGED"
-                await async_log_to_db(run_id, "MERGED", details.get("old_instance"), details.get("new_instance"), details.get("savings"), details.get("risk_level"))
+            details["status"] = "SIMULATED_MERGED"
+            await async_log_to_db(run_id, "SIMULATED_MERGED", details.get("old_instance"), details.get("new_instance"), details.get("savings"), details.get("risk_level"))
+            await async_append_audit_event(run_id, "SIMULATED_MERGED", "APPROVED_BY_HUMAN", details.get("risk_score", 0), details.get("confidence_score", 0), details.get("savings", 0.0), "remote_gitlab_mr")
 
-        return {"status": "success", "message": f"Run {run_id} merged."}
+        return {"status": "success", "message": f"Run {run_id} approved and merged to simulation sandbox target."}
     except Exception as e:
         logger.error(f"❌ [CRITICAL] Merge failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -860,7 +1015,8 @@ async def reject_mr(run_id: str):
     details = run_details_cache[run_id]
     details["status"] = "REJECTED"
     await async_log_to_db(run_id, "REJECTED", details.get("old_instance"), details.get("new_instance"), details.get("savings"), details.get("risk_level"))
-    logger.info(f"✅ [SUCCESS] Run {run_id} rejected and logged to ledger.")
+    await async_append_audit_event(run_id, "REJECTED", "REJECTED_BY_HUMAN", details.get("risk_score", 0), details.get("confidence_score", 0), details.get("savings", 0.0), "demo_infrastructure.tf", {"action": "rejected"})
+    logger.info(f"✅ [SUCCESS] Run {run_id} rejected by operator and logged to ledger.")
     return {"status": "success", "message": f"Run {run_id} rejected."}
 
 @app.get("/api/pending-approvals")
@@ -869,7 +1025,6 @@ async def pending_approvals():
     for run_id, details in run_details_cache.items():
         if details.get("status") == "REQUIRES_APPROVAL":
             pending.append({"run_id": run_id, **details})
-    # Sort newest first
     pending.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     return {"pending": pending}
 
@@ -1048,10 +1203,10 @@ async def simulate_incident(run_id: str):
     await asyncio.sleep(1.0)
 
     try:
-        if SIMULATION_MODE:
-            logger.info("💾 [SRE-OPS] Executing automated self-healing rollback locally...")
-            with open(os.path.join(BASE_DIR, "main.tf"), "w") as f:
-                f.write(original_code)
+        if SIMULATION_MODE or IS_PUBLIC_DEMO or IS_RENDER:
+            logger.info(f"💾 [SRE-OPS] Executing automated self-healing rollback locally to isolated target ({DEMO_TARGET_FILE})...")
+            with open(DEMO_TARGET_FILE, "w", encoding="utf-8") as f:
+                f.write(original_code or DEMO_INITIAL_HCL)
         else:
             logger.info("🔌 [GITOPS] Executing automated self-healing rollback via GitLab MCP...")
             npx_command = "npx.cmd" if sys.platform == "win32" else "npx"
@@ -1084,7 +1239,7 @@ async def get_run_details(run_id: str):
     if run_id in run_details_cache:
         return run_details_cache[run_id]
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DEMO_DB_FILE)
     c = conn.cursor()
     c.execute("SELECT * FROM audit_logs WHERE run_id = ?", (run_id,))
     row = c.fetchone()
@@ -1092,7 +1247,7 @@ async def get_run_details(run_id: str):
     if row:
         return {"status": row[2], "old_instance": row[3], "new_instance": row[4],
                 "savings": row[5], "risk_level": row[6], "timestamp": row[1],
-                "rollback_plan": "Revert via GitLab MR revert.", "reasoning": "Historical record."}
+                "rollback_plan": "Revert via sandbox baseline.", "reasoning": "Historical record."}
     raise HTTPException(status_code=404, detail="Run not found.")
 
 # --- System Logs (Polling Fallback) ---
@@ -1102,7 +1257,7 @@ async def get_system_logs():
 
 @app.get("/api/runs")
 async def get_all_runs():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DEMO_DB_FILE)
     c = conn.cursor()
     try:
         c.execute("SELECT run_id, timestamp, status, old_instance, new_instance, savings, risk_level, risk_score, blast_radius_assessment, jira_ticket, confidence_score, reasoning_trace FROM audit_logs ORDER BY timestamp DESC")
@@ -1128,8 +1283,8 @@ async def get_all_runs():
 # --- V1 Metrics Summary (Pre-Aggregated, Backend-Computed) ---
 @app.get("/api/v1/metrics/summary")
 async def get_metrics_summary():
-    """Returns pre-aggregated SRE metrics. Frontend is a dumb visualizer for smart data."""
-    conn = sqlite3.connect(DB_FILE)
+    """Returns pre-aggregated SRE metrics. Frontend is a visualizer for backend metrics."""
+    conn = sqlite3.connect(DEMO_DB_FILE)
     c = conn.cursor()
     try:
         c.execute("SELECT status, savings, risk_level, timestamp FROM audit_logs ORDER BY timestamp DESC")
@@ -1182,14 +1337,14 @@ async def get_metrics_summary():
 # --- Real-Time Topology (parsed from main.tf + latest run) ---
 @app.get("/api/v1/topology")
 async def get_topology():
-    """Parses actual main.tf to build a live resource topology graph."""
+    """Parses demo_infrastructure.tf in sandbox to build a live resource topology graph."""
     import re
-    local_path = os.path.join(BASE_DIR, "main.tf")
+    local_path = DEMO_TARGET_FILE
     try:
-        with open(local_path, "r") as f:
+        with open(local_path, "r", encoding="utf-8") as f:
             tf_code = f.read()
     except Exception:
-        tf_code = ""
+        tf_code = DEMO_INITIAL_HCL
 
     # Get latest successful run details for state
     latest_run = None
@@ -1278,10 +1433,10 @@ async def get_cloud_invoice():
             runs_counted += 1
 
     # Also scan DB for historical runs not in cache
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DEMO_DB_FILE)
     c = conn.cursor()
     try:
-        c.execute("SELECT savings FROM audit_logs WHERE status IN ('SUCCESS','AUTO_MERGED','MERGED')")
+        c.execute("SELECT savings FROM audit_logs WHERE status IN ('SUCCESS','AUTO_MERGED','MERGED','SIMULATED_MERGED')")
         db_rows = c.fetchall()
     except Exception:
         db_rows = []
@@ -1299,6 +1454,18 @@ async def get_cloud_invoice():
         "azure": round(azure_total, 2),
         "total": round(aws_total + gcp_total + azure_total, 2),
         "simulation_mode": SIMULATION_MODE,
+    }
+
+# --- Safe Public Health Probe (Render / Uptime Monitors) ---
+@app.get("/health")
+async def health_check():
+    """Safe, non-sensitive health check returning service status without leaking configuration."""
+    return {
+        "status": "healthy",
+        "service": "zerodrift-engine",
+        "mode": "simulation",
+        "demo_mode": True,
+        "timestamp": datetime.now().isoformat(),
     }
 
 # --- Real-Time Backend Health (live status ping) ---
@@ -1324,7 +1491,7 @@ async def get_preflight(run_id: str):
     details = run_details_cache.get(run_id)
     if not details:
         # Try DB for historical
-        conn = sqlite3.connect(DB_FILE)
+        conn = sqlite3.connect(DEMO_DB_FILE)
         c = conn.cursor()
         c.execute("SELECT * FROM audit_logs WHERE run_id = ?", (run_id,))
         row = c.fetchone()
@@ -1388,19 +1555,19 @@ async def get_preflight(run_id: str):
 # --- Infrastructure Drift Index ---
 @app.get("/api/v1/drift")
 async def get_drift_index():
-    """Computes Infrastructure Drift Index by diffing main.tf against main.tf.backup (git baseline)."""
+    """Computes Infrastructure Drift Index by diffing demo_infrastructure.tf against demo_baseline.tf."""
     import difflib
-    local_path = os.path.join(BASE_DIR, "main.tf")
-    backup_path = os.path.join(BASE_DIR, "main.tf.backup")
+    local_path = DEMO_TARGET_FILE
+    backup_path = DEMO_BASELINE_FILE
 
     try:
-        with open(local_path, "r") as f:
+        with open(local_path, "r", encoding="utf-8") as f:
             current_lines = f.readlines()
     except Exception:
         current_lines = []
 
     try:
-        with open(backup_path, "r") as f:
+        with open(backup_path, "r", encoding="utf-8") as f:
             baseline_lines = f.readlines()
     except Exception:
         baseline_lines = current_lines  # If no backup, drift = 0
@@ -1439,8 +1606,8 @@ async def get_drift_index():
         "added_lines": added,
         "removed_lines": removed,
         "drifted_resources": drifted_resources,
-        "baseline": "main.tf.backup",
-        "current": "main.tf",
+        "baseline": "demo_baseline.tf",
+        "current": "demo_infrastructure.tf",
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -1768,8 +1935,12 @@ async def get_integration_status():
 
 @app.post("/api/integrations/connect")
 async def connect_integration(payload: IntegrationConnectPayload):
-    """Validates credentials by making a real API call and persists the result."""
+    """Validates credentials by making an API call, guarded in public demo mode."""
     iid = payload.integration_id.lower()
+    if IS_PUBLIC_DEMO or IS_RENDER:
+        logger.warning(f"🔒 [SANDBOX GUARD] External {iid} credential verification blocked in public demo mode.")
+        raise HTTPException(status_code=403, detail=f"Live {iid.upper()} integration verification is disabled in public demo sandbox mode.")
+
     validator = VALIDATORS.get(iid)
     
     if not validator:
@@ -1816,28 +1987,27 @@ class IaCPayload(BaseModel):
 
 @app.get("/api/iac")
 async def get_iac():
-    local_path = os.path.join(BASE_DIR, "main.tf")
-    if os.path.exists(local_path):
-        with open(local_path, "r") as f:
+    if os.path.exists(DEMO_TARGET_FILE):
+        with open(DEMO_TARGET_FILE, "r", encoding="utf-8") as f:
             return {"code": f.read()}
-    return {"code": ""}
+    return {"code": DEMO_INITIAL_HCL}
 
 @app.post("/api/iac")
 async def save_iac(payload: IaCPayload):
-    local_path = os.path.join(BASE_DIR, "main.tf")
-    with open(local_path, "w") as f:
+    with open(DEMO_TARGET_FILE, "w", encoding="utf-8") as f:
         f.write(payload.code)
     return {"status": "success"}
 
 @app.post("/api/iac/reset")
 async def reset_iac():
-    backup_path = os.path.join(BASE_DIR, "main.tf.backup")
-    local_path = os.path.join(BASE_DIR, "main.tf")
-    if os.path.exists(backup_path):
-        import shutil
-        shutil.copy(backup_path, local_path)
-        return {"status": "success"}
-    return {"status": "error", "message": "Backup not found"}
+    if os.path.exists(DEMO_BASELINE_FILE):
+        with open(DEMO_BASELINE_FILE, "r", encoding="utf-8") as f:
+            baseline = f.read()
+    else:
+        baseline = DEMO_INITIAL_HCL
+    with open(DEMO_TARGET_FILE, "w", encoding="utf-8") as f:
+        f.write(baseline)
+    return {"status": "success"}
 
 # --- System Logs (True SSE Stream) ---
 @app.get("/api/stream-logs")
@@ -1877,22 +2047,17 @@ async def stream_logs(request: Request):
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
     )
 
-# --- SRE Reject MR ---
-@app.post("/api/reject-mr/{run_id}")
-async def reject_mr(run_id: str):
-    """Human-in-the-loop rejection. Marks run as REJECTED with full audit trail."""
-    logger.info(f"🚫 [SRE-OPS] Rejection received for run {run_id}.")
-    if run_id not in run_details_cache:
-        raise HTTPException(status_code=404, detail="Run not found.")
-    details = run_details_cache[run_id]
-    details["status"] = "REJECTED"
-    await async_log_to_db(run_id, "REJECTED",
-              details.get("old_instance", "N/A"),
-              details.get("new_instance", "N/A"),
-              details.get("savings", 0.0),
-              details.get("risk_level", "UNKNOWN"))
-    logger.info(f"🚫 [SRE-OPS] Run {run_id} rejected by human operator. No changes applied.")
-    return {"status": "success", "message": f"Run {run_id} rejected."}
+# --- Additive Append-Only Audit Events Endpoint ---
+@app.get("/api/v1/audit-events")
+async def get_audit_events():
+    """Returns append-only audit state transition events from isolated demo ledger."""
+    conn = sqlite3.connect(DEMO_DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM audit_events ORDER BY timestamp DESC LIMIT 50")
+    events = [dict(row) for row in c.fetchall()]
+    conn.close()
+    return {"status": "success", "total_records": len(events), "events": events}
 
 # --- GitLab Webhook ---
 @app.post("/webhook")
@@ -1915,11 +2080,15 @@ async def metrics():
 # --- Audit Ledger ---
 @app.get("/audit-ledger")
 async def get_audit_ledger():
-    conn = sqlite3.connect(DB_FILE)
+    """Returns audit logs from isolated demo ledger."""
+    conn = sqlite3.connect(DEMO_DB_FILE)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 20")
-    logs = [dict(row) for row in c.fetchall()]
+    try:
+        c.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 20")
+        logs = [dict(row) for row in c.fetchall()]
+    except Exception:
+        logs = []
     conn.close()
     return {"status": "success", "total_records": len(logs), "ledger": logs}
 
@@ -1928,4 +2097,5 @@ async def get_audit_ledger():
 # ==========================================================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port, access_log=False)

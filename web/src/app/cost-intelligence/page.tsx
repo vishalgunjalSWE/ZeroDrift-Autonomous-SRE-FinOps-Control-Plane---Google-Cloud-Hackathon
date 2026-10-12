@@ -5,7 +5,7 @@ import { CostTrajectoryChart } from "@/components/CostTrajectoryChart";
 import { MultiCloudInvoice } from "@/components/MultiCloudInvoice";
 import { HealthHeatmap } from "@/components/HealthHeatmap";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function CostIntelligencePage() {
   const { data: runs = [] } = useQuery<any[]>({

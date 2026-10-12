@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { LayoutGrid, Loader2 } from "lucide-react";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 interface HeatNode {
   id: number;

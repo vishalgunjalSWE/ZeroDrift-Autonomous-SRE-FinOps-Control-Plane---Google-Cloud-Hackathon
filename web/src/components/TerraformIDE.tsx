@@ -21,7 +21,7 @@ const MonacoEditor = dynamic(
   }
 );
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 type ValidationState = "idle" | "validating" | "pass" | "fail";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -58,16 +58,30 @@ const TreeFolder = ({ node, activeFile, setActiveFile, depth = 0 }: { node: Tree
   const [isOpen, setIsOpen] = useState(true);
   
   if (node.type === "file") {
+    const isSandbox = node.path.includes("terraform_sandbox") || node.path.includes("demo_infrastructure");
     return (
       <button
         onClick={() => setActiveFile(node.path)}
         style={{ paddingLeft: `${8 + depth * 12}px` }}
-        className={`w-full text-left py-1 pr-3 text-[11px] font-mono truncate flex items-center space-x-1.5 ${
-          activeFile === node.path ? "bg-azure/10 text-azure" : "text-muted hover:bg-white/5 hover:text-white"
+        className={`w-full text-left py-1.5 pr-2.5 text-[11px] font-mono truncate flex items-center justify-between group transition-colors ${
+          activeFile === node.path
+            ? "bg-blue-500/10 text-blue-400 font-semibold"
+            : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
         }`}
       >
-        <FileCode className="w-3.5 h-3.5 shrink-0 opacity-70" />
-        <span className="truncate">{node.name}</span>
+        <div className="flex items-center space-x-1.5 truncate">
+          <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSandbox ? "text-amber-400/90" : "text-slate-500"}`} />
+          <span className="truncate">{node.name}</span>
+        </div>
+        {isSandbox ? (
+          <span className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 shrink-0 font-sans font-bold">
+            Sandbox
+          </span>
+        ) : (
+          <span className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-white/[0.05] text-slate-500 shrink-0 font-sans">
+            Base
+          </span>
+        )}
       </button>
     );
   }
@@ -82,11 +96,11 @@ const TreeFolder = ({ node, activeFile, setActiveFile, depth = 0 }: { node: Tree
       <button
         onClick={() => setIsOpen(!isOpen)}
         style={{ paddingLeft: `${8 + depth * 12}px` }}
-        className="w-full text-left py-1 pr-3 text-[11px] font-mono truncate flex items-center space-x-1 text-[#EDEDED] hover:text-white hover:bg-white/5"
+        className="w-full text-left py-1.5 pr-2.5 text-[11px] font-mono truncate flex items-center space-x-1.5 text-slate-300 hover:text-white hover:bg-white/[0.04] transition-colors"
       >
-        {isOpen ? <ChevronDown className="w-3 h-3 shrink-0 opacity-70" /> : <ChevronRight className="w-3 h-3 shrink-0 opacity-70" />}
-        <Folder className="w-3 h-3 shrink-0 text-azure" />
-        <span className="truncate font-semibold tracking-wide">{node.name}</span>
+        {isOpen ? <ChevronDown className="w-3 h-3 shrink-0 text-slate-500" /> : <ChevronRight className="w-3 h-3 shrink-0 text-slate-500" />}
+        <Folder className={`w-3.5 h-3.5 shrink-0 ${node.name.includes("sandbox") ? "text-amber-400" : "text-blue-400"}`} />
+        <span className="truncate font-medium">{node.name}</span>
       </button>
       {isOpen && (
         <div className="w-full">
@@ -160,7 +174,6 @@ export function TerraformIDE() {
     setValidationMsg("");
     // Save first, then trigger a validate-only sweep
     await handleSave();
-    // Quick mock validation via our existing validate logic in the backend
     try {
       const res = await fetch(`${BACKEND}/api/v1/validate-iac`, {
         method: "POST",
@@ -169,10 +182,14 @@ export function TerraformIDE() {
       });
       if (res.ok) {
         const data = await res.json();
-        setValidation(data.valid ? "pass" : "fail");
-        setValidationMsg(data.message || "");
+        const isPass = data.status === "PASS";
+        setValidation(isPass ? "pass" : "fail");
+        setValidationMsg(
+          isPass
+            ? `Syntax PASS — ${data.resources_validated} resource(s) validated, 0 errors.`
+            : `Syntax FAIL — ${data.errors ? data.errors.join("; ") : "Validation failed"}`
+        );
       } else {
-        // Fallback: basic client-side check
         const hasProvider = code.includes("provider");
         const hasResource = code.includes("resource");
         if (hasProvider && hasResource) {
@@ -183,7 +200,7 @@ export function TerraformIDE() {
           setValidationMsg("Missing required provider or resource blocks.");
         }
       }
-    } catch {
+    } catch (e) {
       const hasProvider = code.includes("provider");
       const hasResource = code.includes("resource");
       setValidation(hasProvider && hasResource ? "pass" : "fail");
@@ -221,27 +238,38 @@ export function TerraformIDE() {
     : saveState === "error" ? "text-infrared"
     : "text-[#EDEDED]";
 
+  const isSandboxTarget = activeFile.includes("terraform_sandbox") || activeFile.includes("demo_infrastructure");
+
   return (
-    <div className="flex flex-col h-full space-y-3">
+    <div className="flex flex-col h-full space-y-4">
       {/* IDE Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 pb-2 border-b border-white/[0.08]">
         <div>
-          <h2 className="text-lg font-semibold flex items-center">
-            <Terminal className="w-4 h-4 mr-2 text-azure" />
-            Terraform IaC Sandbox
+          <div className="flex items-center space-x-2 text-xs font-mono uppercase tracking-wider text-slate-400 mb-1">
+            <span>Infrastructure as Code</span>
+            <span>/</span>
+            <span className={isSandboxTarget ? "text-amber-400" : "text-slate-300"}>
+              {isSandboxTarget ? "Isolated Simulation Target" : "Baseline Reference"}
+            </span>
+          </div>
+          <h2 className="text-xl font-bold tracking-tight text-white flex items-center">
+            <Terminal className="w-5 h-5 mr-2.5 text-blue-500" />
+            IaC Explorer & Validation Sandbox
           </h2>
-          <p className="text-xs text-muted">VS Code-grade editor — Monaco Engine</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Monaco editor with static HCL syntax pre-flight verification and strict sandbox boundary enforcement.
+          </p>
         </div>
 
         {/* Action Bar */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2.5">
           {/* Reset */}
           <button
             onClick={handleReset}
-            title="Reset to backup"
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-xs font-medium transition-colors"
+            title="Reset sandbox to backup baseline"
+            className="zd-btn zd-btn-secondary text-xs px-3 py-1.5 flex items-center space-x-1.5"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-violet" />
+            <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
             <span>Reset to Backup</span>
           </button>
 
@@ -249,9 +277,9 @@ export function TerraformIDE() {
           <button
             onClick={handleSave}
             disabled={saveState === "saving"}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-xs font-medium transition-colors ${saveColor}`}
+            className="zd-btn zd-btn-secondary text-xs px-3 py-1.5 flex items-center space-x-1.5"
           >
-            <SaveIcon className={`w-3.5 h-3.5 ${saveState === "saving" ? "animate-spin" : ""}`} />
+            <SaveIcon className={`w-3.5 h-3.5 ${saveState === "saving" ? "animate-spin" : saveColor}`} />
             <span>{saveLabel}</span>
           </button>
 
@@ -259,21 +287,17 @@ export function TerraformIDE() {
           <button
             onClick={handleValidate}
             disabled={validation === "validating"}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 border rounded-md text-xs font-medium transition-all ${
-              validation === "pass" ? "bg-emerald/10 border-emerald/30 text-emerald"
-              : validation === "fail" ? "bg-infrared/10 border-infrared/30 text-infrared"
-              : "bg-white/5 hover:bg-white/10 border-white/10"
-            }`}
+            className="zd-btn zd-btn-secondary text-xs px-3 py-1.5 flex items-center space-x-1.5"
           >
-            {validation === "validating" ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : validation === "pass" ? <CheckCircle className="w-3.5 h-3.5" />
-              : validation === "fail" ? <XCircle className="w-3.5 h-3.5" />
-              : <ShieldCheck className="w-3.5 h-3.5 text-azure" />}
+            {validation === "validating" ? <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+              : validation === "pass" ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              : validation === "fail" ? <XCircle className="w-3.5 h-3.5 text-rose-400" />
+              : <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />}
             <span>
-              {validation === "validating" ? "Validating..."
-                : validation === "pass" ? "Valid"
-                : validation === "fail" ? "Invalid"
-                : "Validate"}
+              {validation === "validating" ? "Validating HCL..."
+                : validation === "pass" ? "Demo Guardrail Passed"
+                : validation === "fail" ? "Syntax Check Failed"
+                : "Pre-Flight Check"}
             </span>
           </button>
 
@@ -281,10 +305,10 @@ export function TerraformIDE() {
           <button
             onClick={handleApply}
             disabled={isApplying}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-azure hover:bg-azure/80 text-white rounded-md text-xs font-semibold transition-all shadow-[0_0_12px_rgba(0,112,243,0.3)]"
+            className="zd-btn zd-btn-primary text-xs px-3.5 py-1.5 flex items-center space-x-1.5"
           >
             {isApplying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-            <span>{isApplying ? "Applying..." : "Apply & Sweep"}</span>
+            <span>{isApplying ? "Triggering..." : "Trigger Simulation Sweep"}</span>
           </button>
         </div>
       </div>
@@ -297,10 +321,10 @@ export function TerraformIDE() {
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            className={`text-xs px-3 py-2 rounded-md font-mono border ${
+            className={`text-xs px-3.5 py-2.5 rounded-lg font-mono border ${
               validation === "pass"
-                ? "bg-emerald/5 border-emerald/20 text-emerald"
-                : "bg-infrared/5 border-infrared/20 text-infrared"
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                : "bg-rose-500/10 border-rose-500/20 text-rose-400"
             }`}
           >
             {validationMsg}
@@ -312,7 +336,7 @@ export function TerraformIDE() {
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            className="text-xs px-3 py-2 rounded-md font-mono border bg-azure/5 border-azure/20 text-azure"
+            className="text-xs px-3.5 py-2.5 rounded-lg font-mono border bg-blue-500/10 border-blue-500/20 text-blue-400"
           >
             {applyMsg}
           </motion.div>
@@ -320,13 +344,16 @@ export function TerraformIDE() {
       </AnimatePresence>
 
       {/* Editor Layout: Sidebar + Monaco */}
-      <div className="flex-1 flex overflow-hidden glass-card rounded-xl border border-white/5 min-h-0">
+      <div className="flex-1 flex overflow-hidden zd-card border border-white/[0.08] min-h-0">
         
         {/* File Tree Sidebar */}
-        <div className="w-48 border-r border-white/5 bg-white/[0.01] flex flex-col overflow-y-auto">
-          <div className="px-3 py-2 text-xs font-semibold text-muted border-b border-white/5 flex items-center">
-            <Folder className="w-3.5 h-3.5 mr-1.5" />
-            Explorer
+        <div className="w-56 border-r border-white/[0.08] bg-[#0A0C11] flex flex-col overflow-y-auto shrink-0">
+          <div className="px-3.5 py-2.5 text-xs font-semibold text-slate-400 border-b border-white/[0.08] flex items-center justify-between">
+            <span className="flex items-center">
+              <Folder className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
+              Repository
+            </span>
+            <span className="text-[10px] font-mono text-slate-500 uppercase">Tree</span>
           </div>
           <div className="flex-1 py-2">
             {Object.values(buildTree(tree).children).map(child => (
@@ -336,12 +363,27 @@ export function TerraformIDE() {
         </div>
 
         {/* Monaco Editor Panel */}
-        <div className="flex-1 flex flex-col relative min-w-0">
+        <div className="flex-1 flex flex-col relative min-w-0 bg-[#08090C]">
           {/* Editor Tab Bar */}
-          <div className="flex items-center space-x-1 px-4 py-2 bg-white/[0.02] border-b border-white/5 shrink-0 z-10 overflow-x-auto">
-            <div className="flex items-center space-x-2 px-3 py-1 bg-white/5 rounded-sm border border-white/10 shrink-0">
-              <div className="w-2 h-2 rounded-full bg-azure/60" />
-              <span className="text-xs text-[#EDEDED] font-mono">{activeFile}</span>
+          <div className="flex items-center justify-between px-4 py-2 bg-[#0E121B] border-b border-white/[0.08] shrink-0 z-10 overflow-x-auto gap-4">
+            <div className="flex items-center space-x-2.5">
+              <div className="flex items-center space-x-2 px-3 py-1 bg-white/[0.04] rounded border border-white/[0.08] shrink-0">
+                <div className={`w-2 h-2 rounded-full ${isSandboxTarget ? "bg-amber-400" : "bg-blue-400"}`} />
+                <span className="text-xs text-slate-200 font-mono">{activeFile}</span>
+              </div>
+              {isSandboxTarget ? (
+                <span className="zd-badge zd-badge-amber text-[10px] py-0.5">
+                  Isolated Sandbox Target · Writes Allowed
+                </span>
+              ) : (
+                <span className="zd-badge zd-badge-neutral text-[10px] py-0.5">
+                  Read-Only Baseline · Mutation Protected
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-500 shrink-0">
+              <span>HCL / Terraform 1.5+</span>
             </div>
           </div>
 

@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { Users, UserPlus, Shield, Mail, CheckCircle2, Trash2, X, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+
 export default function TeamsPage() {
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,7 +15,7 @@ export default function TeamsPage() {
 
   const fetchTeams = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/teams");
+      const res = await fetch(`${BACKEND}/api/v1/teams`);
       if (res.ok) {
         const data = await res.json();
         setTeamMembers(data.teams);
@@ -33,7 +35,7 @@ export default function TeamsPage() {
     e.preventDefault();
     setInviting(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/teams", {
+      const res = await fetch(`${BACKEND}/api/v1/teams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(inviteForm),
@@ -53,7 +55,7 @@ export default function TeamsPage() {
   const handleRemove = async (id: string) => {
     if (!confirm("Are you sure you want to remove this member?")) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/teams/${id}`, { method: "DELETE" });
+      const res = await fetch(`${BACKEND}/api/v1/teams/${id}`, { method: "DELETE" });
       if (res.ok) fetchTeams();
     } catch (err) {
       console.error(err);

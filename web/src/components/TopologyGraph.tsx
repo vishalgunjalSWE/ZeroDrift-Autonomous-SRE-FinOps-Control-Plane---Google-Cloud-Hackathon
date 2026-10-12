@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Loader2, ServerCrash } from "lucide-react";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 interface TopoNode {
   id: string;

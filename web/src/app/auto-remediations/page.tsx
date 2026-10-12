@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AIExecutionStream } from "@/components/AIExecutionStream";
 import { formatDistanceToNow } from "date-fns";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function AutoRemediationsPage() {
   const { data: runs = [], isLoading } = useQuery<any[]>({
@@ -16,8 +16,8 @@ export default function AutoRemediationsPage() {
   return (
     <main className="p-6 lg:p-10 max-w-[1800px] mx-auto w-full h-full flex flex-col space-y-8">
       <div className="border-b border-white/10 pb-6 shrink-0">
-        <h1 className="text-2xl font-bold text-white">Auto-Remediations</h1>
-        <p className="text-muted text-[13px]">Real-time AI execution stream and remediation history</p>
+        <h1 className="text-2xl font-bold text-white">Remediations &amp; Execution History</h1>
+        <p className="text-muted text-[13px]">Real-time execution stream and human-approved remediation history</p>
       </div>
 
       <div className="grid grid-cols-1 gap-8">

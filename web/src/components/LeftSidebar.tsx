@@ -9,8 +9,9 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { usePendingApprovals } from "@/hooks/useApi";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export function LeftSidebar() {
   const pathname = usePathname();
@@ -20,18 +21,14 @@ export function LeftSidebar() {
     queryFn: () => fetch(`${BACKEND}/api/v1/metrics/summary`).then((r) => r.json()).catch(() => null),
   });
 
-  const { data: runs = [] } = useQuery<any[]>({
-    queryKey: ["runs"],
-    queryFn: () => fetch(`${BACKEND}/api/runs`).then((r) => r.json()).catch(() => []),
-  });
-
-  const pendingCount = runs.filter((r) => r.status === "pending_approval").length;
+  const { data: pendingData } = usePendingApprovals();
+  const pendingCount = pendingData?.pending?.length ?? 0;
 
   const groups = [
     {
       title: "OPERATIONS",
       items: [
-        { label: "Auto-Remediations", href: "/auto-remediations", icon: <Terminal className="w-4 h-4" />, count: metrics?.success_runs ?? 0 },
+        { label: "Remediations", href: "/auto-remediations", icon: <Terminal className="w-4 h-4" />, count: metrics?.success_runs ?? 0 },
         { label: "Risk & Events", href: "/risk-events", icon: <ShieldAlert className="w-4 h-4" />, count: metrics?.high_risk_events ?? 0 },
         { label: "Infrastructure Drift", href: "/infrastructure-drift", icon: <Activity className="w-4 h-4" /> },
         { label: "Policy Guardrails", href: "/policy-guardrails", icon: <Shield className="w-4 h-4" /> },

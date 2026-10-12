@@ -6,7 +6,7 @@ import { Shield, Sliders, Zap, Loader2, Wifi, WifiOff, AlertTriangle, CheckCircl
 import { usePendingApprovals, useRejectMR } from "@/hooks/useApi";
 import { PreFlightDrawer } from "./PreFlightDrawer";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export function GuardrailsSidebar() {
   const queryClient = useQueryClient();
@@ -107,91 +107,123 @@ export function GuardrailsSidebar() {
   }
 
   return (
-    <div className="glass-card rounded-xl border border-white/5 p-6 flex flex-col space-y-6 h-full overflow-y-auto">
+    <div className="zd-card border border-white/[0.08] p-5 flex flex-col space-y-5 h-full overflow-y-auto bg-[#11151E]">
       <div>
-        <h3 className="text-sm font-semibold tracking-wide flex items-center mb-1 text-white">
-          <Shield className="w-4 h-4 mr-2 text-azure" />
-          Mission Control
-        </h3>
-        <p className="text-xs text-muted font-mono tracking-tight">Autonomous orchestration active.</p>
+        <div className="flex items-center space-x-2 mb-1">
+          <Shield className="w-4 h-4 text-blue-400" />
+          <h3 className="text-xs font-semibold tracking-wider uppercase text-slate-200">
+            Mission Control &amp; Policies
+          </h3>
+        </div>
+        <p className="text-xs text-blue-400 font-mono font-medium">
+          Autonomous analysis · human-approved remediation
+        </p>
+        <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+          Policies generate recommendations. Human approval is required before any simulated patch.
+        </p>
       </div>
 
+      {/* Group 1: Environment & Integrations */}
       <div className="space-y-1">
-        <div className="text-[11px] text-muted uppercase font-semibold tracking-wider mb-2 flex justify-between">
-          <span>Global Override</span>
-          <span className="text-emerald">Safe</span>
+        <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2 flex justify-between">
+          <span>Environment &amp; Boundary</span>
+          <span className="text-emerald-400 font-bold">Isolated</span>
         </div>
         <Toggle
-          label="Simulation Mode (Local)"
+          label="Simulation Mode (Sandbox)"
           checked={simMode}
           onChange={(v) => { setSimMode(v); postState({ simMode: v }); }}
         />
-        <Toggle
-          label="Live Drift Sync (GitLab)"
-          checked={liveDrift}
-          onChange={(v) => { setLiveDrift(v); postState({ liveDrift: v }); }}
-        />
+        {/* Strictly truthful GitLab integration state */}
+        <div className="flex items-center justify-between py-2 border-b border-white/[0.05]">
+          <div className="space-y-0.5">
+            <span className="text-xs font-medium text-slate-400">Live Drift Sync (GitLab)</span>
+            <div className="text-[10px] text-slate-500 font-mono">Unavailable in local simulation · Credentials required</div>
+          </div>
+          <span className="zd-badge-neutral text-[10px]">
+            Disabled
+          </span>
+        </div>
       </div>
 
+      {/* Group 2: Proposal Policies */}
       <div className="space-y-1">
-        <div className="text-[11px] text-muted uppercase font-semibold tracking-wider mb-2">Active Policies</div>
+        <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mb-2">
+          Proposal Generation Policies
+        </div>
         <Toggle
-          label="Auto-Downsize EC2"
+          label="Generate proposal: Downsize EC2"
           checked={downsizeEC2}
           onChange={(v) => { setDownsizeEC2(v); postState({ downsizeEC2: v }); }}
         />
         <Toggle
-          label="Auto-Upgrade EBS to gp3"
+          label="Generate proposal: Upgrade EBS to gp3"
           checked={upgradeEBS}
           onChange={(v) => { setUpgradeEBS(v); postState({ upgradeEBS: v }); }}
         />
         <Toggle
-          label="Auto-Downsize GCP Engine"
+          label="Generate proposal: Downsize GCP Compute"
           checked={downsizeGCP}
           onChange={(v) => { setDownsizeGCP(v); postState({ downsizeGCP: v }); }}
         />
       </div>
 
-      <div className="pt-4 border-t border-white/5 space-y-3">
+      {/* Group 3: HITL Gatekeeper Queue */}
+      <div className="pt-3 border-t border-white/[0.08] space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-[11px] text-amber uppercase font-semibold tracking-wider">HITL Approval Queue</div>
-          {pendingRuns.length > 0 && (
-            <span className="bg-amber/10 text-amber text-[10px] font-bold px-2 py-0.5 rounded-sm shadow-[0_0_8px_rgba(245,158,11,0.15)] border border-amber/30">
+          <div className="text-[11px] text-slate-300 font-mono uppercase tracking-wider font-semibold">
+            HITL Approval Queue
+          </div>
+          {pendingRuns.length > 0 ? (
+            <span className="zd-badge-amber">
               {pendingRuns.length} Pending
+            </span>
+          ) : (
+            <span className="zd-badge-neutral text-[10px]">
+              0 Pending
             </span>
           )}
         </div>
         
         {isLoadingPending ? (
-          <div className="text-xs text-muted flex items-center"><Loader2 className="w-3 h-3 animate-spin mr-2" /> Loading...</div>
+          <div className="text-xs text-slate-400 flex items-center font-mono py-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin mr-2 text-amber-400" />
+            <span>Checking queue status...</span>
+          </div>
         ) : pendingRuns.length === 0 ? (
-          <div className="text-xs text-muted bg-white/[0.02] p-3 rounded-lg border border-white/5 text-center">
-            No pending approvals.
+          <div className="text-xs text-slate-400 bg-[#0E121A] p-3 rounded-lg border border-white/[0.06] text-center font-mono">
+            Queue clear. 0 proposals awaiting review.
           </div>
         ) : (
           pendingRuns.map((run: any) => (
-            <div key={run.run_id} className="bg-amber/[0.03] border border-amber/20 rounded-lg p-3 relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-1 h-full bg-amber/50" />
+            <div key={run.run_id} className="bg-[#141924] border border-amber-500/25 rounded-lg p-3 relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-amber-400" />
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <div className="text-xs font-semibold text-[#EDEDED] font-mono">{run.old_instance?.split(" ")[0] || "Infrastructure"}</div>
-                  <div className="text-[11px] text-muted mt-0.5">Blast Radius: Low · Risk: {run.risk_score || 5}/10</div>
+                  <div className="text-xs font-semibold text-slate-100 font-mono truncate max-w-[170px]">
+                    {run.old_instance?.split(" ")[0] || "Compute Rightsizing"}
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                    Risk Score: {run.risk_score || 2}/10 · Sandbox
+                  </div>
                 </div>
                 {run.savings && (
-                  <div className="text-xs font-semibold text-emerald">${Math.abs(run.savings).toFixed(0)}/mo</div>
+                  <div className="text-xs font-bold font-mono text-emerald-400">
+                    +${Math.abs(Number(run.savings)).toFixed(2)}/mo
+                  </div>
                 )}
               </div>
               <div className="flex space-x-2 mt-3">
                 <button
                   onClick={() => setSelectedRunForPreFlight(run)}
-                  className="flex-1 bg-amber/10 hover:bg-amber/20 text-amber text-[10px] font-bold py-1.5 rounded transition-colors flex items-center justify-center"
+                  className="zd-btn-primary flex-1 py-1.5 text-[11px] flex items-center justify-center"
                 >
-                  <CheckCircle className="w-3 h-3 mr-1" /> Pre-Flight
+                  <CheckCircle className="w-3 h-3 mr-1" /> Review Proposal
                 </button>
                 <button
                   onClick={() => rejectMutation.mutate(run.run_id)}
                   disabled={rejectMutation.isPending}
-                  className="flex-1 bg-white/5 hover:bg-white/10 text-muted text-[10px] font-bold py-1.5 rounded transition-colors flex items-center justify-center disabled:opacity-50"
+                  className="zd-btn-danger flex-1 py-1.5 text-[11px] flex items-center justify-center disabled:opacity-50"
                 >
                   {rejectMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <><XCircle className="w-3 h-3 mr-1" /> Reject</>}
                 </button>
@@ -201,18 +233,18 @@ export function GuardrailsSidebar() {
         )}
       </div>
 
-      <div className={`pt-4 border-t border-white/5 flex items-center justify-between text-xs`}>
-        <div className={`flex items-center space-x-2 font-mono ${simMode ? "text-amber" : "text-emerald"}`}>
+      <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between text-xs">
+        <div className="flex items-center space-x-1.5 font-mono text-amber-400">
           <Zap className="w-3 h-3" />
-          <span>{simMode ? "Simulation Mode" : "Live Mode"}</span>
+          <span className="text-[11px]">Sandbox Isolated</span>
         </div>
-        <div className="flex items-center space-x-1 text-muted font-mono text-[10px]">
+        <div className="flex items-center space-x-1 text-slate-400 font-mono text-[10px]">
           {syncing ? (
-            <Loader2 className="w-3 h-3 animate-spin text-azure" />
+            <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
           ) : (
-            <Wifi className="w-3 h-3 text-emerald" />
+            <Wifi className="w-3 h-3 text-emerald-400" />
           )}
-          <span>{syncing ? "Syncing" : "Rollback Ready"}</span>
+          <span>{syncing ? "Updating" : "Rollback Ready"}</span>
         </div>
       </div>
 

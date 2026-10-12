@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Shield, Zap, Server, HardDrive, Tags, Loader2, Save } from "lucide-react";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function PolicyGuardrailsPage() {
   const queryClient = useQueryClient();
@@ -121,14 +121,14 @@ export default function PolicyGuardrailsPage() {
             </h2>
             <div className="glass-card rounded-xl p-2 space-y-2 border border-white/5">
               <Toggle 
-                label="Simulation Mode" 
-                description="Run in dry-run mode. Changes are logged but not merged to Git."
+                label="Simulation Mode (Sandbox Isolated)" 
+                description="All mutations isolated to terraform_sandbox. Root main.tf protected."
                 checked={policies.simulation_mode}
                 onChange={(v: boolean) => setPolicies({ ...policies, simulation_mode: v })}
               />
               <Toggle 
-                label="Live Drift Verification" 
-                description="Continuously poll Git and Cloud state to verify infrastructure drift."
+                label="Simulation Drift Verification" 
+                description="Verify infrastructure drift via on-demand simulation sweeps."
                 checked={policies.live_drift_verification}
                 onChange={(v: boolean) => setPolicies({ ...policies, live_drift_verification: v })}
               />
@@ -142,20 +142,20 @@ export default function PolicyGuardrailsPage() {
             </h2>
             <div className="glass-card rounded-xl p-2 space-y-2 border border-white/5">
               <Toggle 
-                label="Auto-Downsize AWS EC2" 
-                description="Identify and automatically downsize idle or over-provisioned EC2 instances."
+                label="Generate proposal: Downsize AWS EC2" 
+                description="Identify and propose rightsizing for idle or over-provisioned EC2 instances."
                 checked={policies.downsize_ec2}
                 onChange={(v: boolean) => setPolicies({ ...policies, downsize_ec2: v })}
               />
               <Toggle 
-                label="Auto-Downsize GCP Compute" 
-                description="Apply right-sizing heuristics to Google Cloud Engine workloads."
+                label="Generate proposal: Downsize GCP Compute" 
+                description="Generate rightsizing proposals for Google Cloud Engine workloads."
                 checked={policies.downsize_gcp}
                 onChange={(v: boolean) => setPolicies({ ...policies, downsize_gcp: v })}
               />
               <Toggle 
-                label="Auto-Upgrade AWS EBS" 
-                description="Convert legacy gp2 volumes to gp3 for lower cost and higher throughput."
+                label="Generate proposal: Upgrade AWS EBS to gp3" 
+                description="Propose converting legacy gp2 volumes to gp3 for lower cost and higher throughput."
                 checked={policies.upgrade_ebs}
                 onChange={(v: boolean) => setPolicies({ ...policies, upgrade_ebs: v })}
               />

@@ -6,7 +6,7 @@ import { X, GitMerge, ShieldAlert, CheckCircle, XCircle, AlertTriangle, Activity
 import { useQuery } from "@tanstack/react-query";
 import { PreFlightDrawer } from "./PreFlightDrawer";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 interface DrawerProps {
   run: any | null;
@@ -68,17 +68,47 @@ function InlineDiff({ original, updated }: { original: string; updated: string }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
-  const cfg = status?.includes("SUCCESS") || status?.includes("MERGED")
-    ? { bg: "bg-emerald/15 border-emerald/30 text-emerald", icon: <CheckCircle className="w-3 h-3" /> }
-    : status?.includes("FAILED") || status?.includes("REJECTED")
-    ? { bg: "bg-infrared/15 border-infrared/30 text-infrared", icon: <XCircle className="w-3 h-3" /> }
-    : status?.includes("ROLLED_BACK")
-    ? { bg: "bg-amber/15 border-amber/30 text-amber", icon: <AlertTriangle className="w-3 h-3" /> }
-    : { bg: "bg-azure/15 border-azure/30 text-azure", icon: <Activity className="w-3 h-3" /> };
+  const isSuccess = status?.includes("SUCCESS") || status?.includes("MERGED");
+  const isFail = status?.includes("FAILED") || status?.includes("REJECTED");
+  const isPending = status?.includes("REQUIRES_APPROVAL") || status?.includes("PENDING");
+  const isRolledBack = status?.includes("ROLLED_BACK");
+
+  if (isSuccess) {
+    return (
+      <span className="zd-badge zd-badge-emerald">
+        <CheckCircle className="w-3 h-3 mr-1" />
+        <span>{status}</span>
+      </span>
+    );
+  }
+  if (isPending) {
+    return (
+      <span className="zd-badge zd-badge-amber">
+        <Activity className="w-3 h-3 mr-1" />
+        <span>{status}</span>
+      </span>
+    );
+  }
+  if (isRolledBack) {
+    return (
+      <span className="zd-badge zd-badge-amber">
+        <AlertTriangle className="w-3 h-3 mr-1" />
+        <span>{status}</span>
+      </span>
+    );
+  }
+  if (isFail) {
+    return (
+      <span className="zd-badge zd-badge-danger">
+        <XCircle className="w-3 h-3 mr-1" />
+        <span>{status}</span>
+      </span>
+    );
+  }
 
   return (
-    <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border tracking-wide ${cfg.bg}`}>
-      {cfg.icon}
+    <span className="zd-badge zd-badge-neutral">
+      <Activity className="w-3 h-3 mr-1" />
       <span>{status}</span>
     </span>
   );
@@ -136,27 +166,27 @@ export function DeepDiveDrawer({ run, onClose, onApprove, onReject, onSimulateIn
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed right-0 top-0 h-full w-full max-w-2xl bg-[#0F0F0F] border-l border-white/10 z-50 flex flex-col overflow-hidden"
+            transition={{ type: "spring", damping: 30, stiffness: 300 }}
+            className="fixed right-0 top-0 h-full w-full max-w-2xl bg-[#0B0D13] border-l border-white/[0.08] z-50 flex flex-col overflow-hidden shadow-2xl"
           >
             {/* Header */}
-            <div className="flex items-start justify-between p-6 border-b border-white/10 bg-white/[0.02] shrink-0">
+            <div className="flex items-start justify-between p-6 border-b border-white/[0.08] bg-[#0E121B] shrink-0">
               <div className="space-y-1.5">
-                <div className="text-[10px] text-muted uppercase font-bold tracking-widest">Run Inspector</div>
-                <div className="text-lg font-mono text-[#EDEDED]">{run.run_id}</div>
-                <div className="flex items-center space-x-3">
+                <div className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">Historical Audit Record</div>
+                <div className="text-lg font-mono text-white font-semibold">{run.run_id}</div>
+                <div className="flex items-center space-x-3 pt-0.5">
                   <StatusBadge status={run.status} />
-                  <span className="flex items-center text-xs text-muted space-x-1">
-                    <Clock className="w-3 h-3" />
+                  <span className="flex items-center text-xs text-slate-400 space-x-1.5 font-mono">
+                    <Clock className="w-3 h-3 text-slate-500" />
                     <span>{new Date(run.timestamp).toLocaleString()}</span>
                   </span>
                 </div>
               </div>
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted hover:text-white"
+                className="p-1.5 hover:bg-white/[0.06] rounded-lg transition-colors text-slate-400 hover:text-white"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -165,7 +195,7 @@ export function DeepDiveDrawer({ run, onClose, onApprove, onReject, onSimulateIn
               {isLoading && (
                 <div className="space-y-4 animate-pulse">
                   {[...Array(3)].map((_, i) => (
-                    <div key={i} className="h-20 bg-white/5 rounded-xl" />
+                    <div key={i} className="h-20 bg-white/[0.04] rounded-lg" />
                   ))}
                 </div>
               )}
@@ -174,59 +204,59 @@ export function DeepDiveDrawer({ run, onClose, onApprove, onReject, onSimulateIn
                 <>
                   {/* Quick Stats */}
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-white/[0.03] border border-white/8 rounded-lg p-3">
-                      <div className="text-[10px] text-muted uppercase tracking-wider mb-1 flex items-center space-x-1">
-                        <DollarSign className="w-3 h-3" />
+                    <div className="bg-[#111520] border border-white/[0.08] rounded-lg p-3.5">
+                      <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider mb-1 flex items-center space-x-1.5">
+                        <DollarSign className="w-3 h-3 text-emerald-400" />
                         <span>Monthly Savings</span>
                       </div>
-                      <div className="text-xl font-semibold text-emerald">
+                      <div className="text-xl font-bold font-mono text-emerald-400">
                         ${(run.savings || 0).toFixed(2)}
                       </div>
                     </div>
-                    <div className="bg-white/[0.03] border border-white/8 rounded-lg p-3">
-                      <div className="text-[10px] text-muted uppercase tracking-wider mb-1 flex items-center space-x-1">
-                        <ShieldAlert className="w-3 h-3" />
+                    <div className="bg-[#111520] border border-white/[0.08] rounded-lg p-3.5">
+                      <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider mb-1 flex items-center space-x-1.5">
+                        <ShieldAlert className="w-3 h-3 text-amber-400" />
                         <span>Risk Score</span>
                       </div>
-                      <div className={`text-xl font-semibold ${
-                        (run.risk_score || 0) > 7 ? "text-infrared"
-                        : (run.risk_score || 0) > 3 ? "text-amber"
-                        : "text-emerald"
+                      <div className={`text-xl font-bold font-mono ${
+                        (run.risk_score || 0) > 7 ? "text-rose-400"
+                        : (run.risk_score || 0) > 3 ? "text-amber-400"
+                        : "text-emerald-400"
                       }`}>
                         {run.risk_score ?? "—"} / 10
                       </div>
                     </div>
-                    <div className="bg-white/[0.03] border border-white/8 rounded-lg p-3">
-                      <div className="text-[10px] text-muted uppercase tracking-wider mb-1 flex items-center space-x-1">
-                        <Cpu className="w-3 h-3" />
+                    <div className="bg-[#111520] border border-white/[0.08] rounded-lg p-3.5">
+                      <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider mb-1 flex items-center space-x-1.5">
+                        <Cpu className="w-3 h-3 text-blue-400" />
                         <span>Risk Level</span>
                       </div>
-                      <div className={`text-xl font-semibold ${
-                        run.risk_level === "HIGH" ? "text-infrared"
-                        : run.risk_level === "MEDIUM" ? "text-amber"
-                        : "text-emerald"
+                      <div className={`text-xl font-bold font-mono ${
+                        run.risk_level === "HIGH" ? "text-rose-400"
+                        : run.risk_level === "MEDIUM" ? "text-amber-400"
+                        : "text-emerald-400"
                       }`}>
-                        {run.risk_level || "—"}
+                        {run.risk_level || "LOW"}
                       </div>
                     </div>
                   </div>
 
                   {/* Action Buttons */}
-                  {run.status === "SUCCESS" && (
+                  {(run.status === "SUCCESS" || run.status === "REQUIRES_APPROVAL") && (
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => setShowPreFlight(true)}
-                        className="flex items-center justify-center space-x-2 py-2.5 bg-azure/10 hover:bg-azure/20 border border-azure/30 text-azure font-semibold rounded-lg transition-all text-sm shadow-[0_0_15px_rgba(0,112,243,0.15)]"
+                        className="zd-btn zd-btn-primary flex items-center justify-center space-x-2 py-2.5 text-xs font-semibold"
                       >
                         <CheckCircle className="w-4 h-4" />
-                        <span>Run Pre-Flight Analysis</span>
+                        <span>Inspect Pre-Flight Evidence</span>
                       </button>
                       <button
                         onClick={() => { onReject?.(run.run_id); onClose(); }}
-                        className="flex items-center justify-center space-x-2 py-2.5 bg-infrared/10 hover:bg-infrared/20 border border-infrared/30 text-infrared font-semibold rounded-lg transition-all text-sm"
+                        className="zd-btn zd-btn-danger flex items-center justify-center space-x-2 py-2.5 text-xs font-semibold"
                       >
                         <XCircle className="w-4 h-4" />
-                        <span>Reject</span>
+                        <span>Reject Proposal</span>
                       </button>
                     </div>
                   )}
@@ -234,49 +264,50 @@ export function DeepDiveDrawer({ run, onClose, onApprove, onReject, onSimulateIn
                   {run.status === "REQUIRES_PRINCIPAL_REVIEW" && (
                     <button
                       onClick={() => { onApprove?.(run.run_id); onClose(); }}
-                      className="w-full flex items-center justify-center space-x-2 py-2.5 bg-violet/10 hover:bg-violet/20 border border-violet/30 text-violet font-semibold rounded-lg transition-all text-sm"
+                      className="zd-btn zd-btn-primary w-full flex items-center justify-center space-x-2 py-2.5 text-xs font-semibold"
                     >
                       <ShieldAlert className="w-4 h-4" />
-                      <span>Override Circuit Breaker & Merge</span>
+                      <span>Review High-Risk Exception</span>
                     </button>
                   )}
 
                   {run.status?.includes("MERGED") && (
                     <button
                       onClick={() => { onSimulateIncident?.(run.run_id); onClose(); }}
-                      className="w-full flex items-center justify-center space-x-2 py-2.5 bg-infrared hover:bg-red-600 text-white font-semibold rounded-lg transition-all text-sm"
+                      className="zd-btn zd-btn-danger w-full flex items-center justify-center space-x-2 py-2.5 text-xs font-semibold"
                     >
                       <AlertTriangle className="w-4 h-4" />
-                      <span>Simulate Production Incident</span>
+                      <span>Simulate Incident in Sandbox</span>
                     </button>
                   )}
 
                   {/* Optimization Details */}
+                  {/* Optimization Details */}
                   {hasOptimizations && (
                     <div>
-                      <div className="text-xs font-semibold text-azure flex items-center space-x-2 mb-3">
-                        <Cpu className="w-4 h-4" />
+                      <div className="text-xs font-semibold text-slate-300 flex items-center space-x-2 mb-2.5">
+                        <Cpu className="w-4 h-4 text-blue-400" />
                         <span>Resource Optimizations</span>
                       </div>
-                      <div className="border border-white/8 rounded-xl overflow-hidden">
+                      <div className="border border-white/[0.08] rounded-lg overflow-hidden bg-[#111520]">
                         <table className="w-full text-xs">
-                          <thead className="bg-white/[0.03] text-muted">
+                          <thead className="bg-[#0E121B] text-slate-400 border-b border-white/[0.08]">
                             <tr>
-                              <th className="text-left px-4 py-2.5">Resource</th>
-                              <th className="text-left px-4 py-2.5">Provider</th>
-                              <th className="text-left px-4 py-2.5 text-infrared">Old</th>
-                              <th className="text-left px-4 py-2.5 text-emerald">New</th>
-                              <th className="text-right px-4 py-2.5 text-emerald">Savings</th>
+                              <th className="text-left px-4 py-2.5 font-mono text-[11px]">Resource</th>
+                              <th className="text-left px-4 py-2.5 font-mono text-[11px]">Provider</th>
+                              <th className="text-left px-4 py-2.5 font-mono text-[11px] text-rose-400">Previous</th>
+                              <th className="text-left px-4 py-2.5 font-mono text-[11px] text-emerald-400">Proposed</th>
+                              <th className="text-right px-4 py-2.5 font-mono text-[11px] text-emerald-400">Savings</th>
                             </tr>
                           </thead>
-                          <tbody>
+                          <tbody className="divide-y divide-white/[0.05]">
                             {richDetails.optimizations.map((opt: any, i: number) => (
-                              <tr key={i} className="border-t border-white/5 hover:bg-white/[0.02]">
-                                <td className="px-4 py-2.5 font-mono text-[11px] text-muted">{opt.resource_name}</td>
-                                <td className="px-4 py-2.5 text-muted">{opt.cloud_provider}</td>
-                                <td className="px-4 py-2.5 text-infrared line-through">{opt.old_config}</td>
-                                <td className="px-4 py-2.5 text-emerald font-semibold">{opt.new_config}</td>
-                                <td className="px-4 py-2.5 text-right text-emerald">${opt.monthly_savings?.toFixed(0)}/mo</td>
+                              <tr key={i} className="hover:bg-white/[0.02]">
+                                <td className="px-4 py-2.5 font-mono text-[11px] text-slate-300">{opt.resource_name}</td>
+                                <td className="px-4 py-2.5 text-slate-400 font-mono text-[11px]">{opt.cloud_provider}</td>
+                                <td className="px-4 py-2.5 text-rose-400 line-through font-mono text-[11px]">{opt.old_config}</td>
+                                <td className="px-4 py-2.5 text-emerald-400 font-mono text-[11px] font-semibold">{opt.new_config}</td>
+                                <td className="px-4 py-2.5 text-right text-emerald-400 font-mono text-[11px] font-semibold">${opt.monthly_savings?.toFixed(0)}/mo</td>
                               </tr>
                             ))}
                           </tbody>
@@ -288,11 +319,11 @@ export function DeepDiveDrawer({ run, onClose, onApprove, onReject, onSimulateIn
                   {/* Infrastructure Diff */}
                   {hasDiff && (
                     <div>
-                      <div className="text-xs font-semibold text-emerald flex items-center space-x-2 mb-3">
-                        <FileCode2 className="w-4 h-4" />
-                        <span>Infrastructure Diff</span>
+                      <div className="text-xs font-semibold text-slate-300 flex items-center space-x-2 mb-2.5">
+                        <FileCode2 className="w-4 h-4 text-emerald-400" />
+                        <span>Simulated Infrastructure Patch Diff</span>
                       </div>
-                      <div className="border border-white/10 rounded-xl overflow-hidden bg-[#0A0A0A]">
+                      <div className="border border-white/[0.08] rounded-lg overflow-hidden bg-[#08090C]">
                         <InlineDiff
                           original={richDetails.original_code}
                           updated={richDetails.updated_terraform_code}
@@ -301,36 +332,35 @@ export function DeepDiveDrawer({ run, onClose, onApprove, onReject, onSimulateIn
                     </div>
                   )}
 
-                  {/* XAI Reasoning */}
+                  {/* Governance Reasoning Trace */}
                   {(richDetails.reasoning || run.reasoning_trace) && (
                     <div>
-                      <div className="text-xs font-semibold text-violet flex items-center justify-between mb-3">
+                      <div className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2.5">
                         <div className="flex items-center space-x-2">
-                          <Activity className="w-4 h-4" />
-                          <span>AI Reasoning Chain</span>
+                          <Activity className="w-4 h-4 text-blue-400" />
+                          <span>Governance Reasoning Trace</span>
                         </div>
-                        <span className="text-[10px] bg-violet/10 px-2 py-0.5 rounded border border-violet/20">Governance-as-Code</span>
+                        <span className="zd-badge zd-badge-neutral text-[10px]">Context Isolation</span>
                       </div>
-                      <div className="bg-[#0A0A0A] border border-white/8 rounded-xl p-4 text-xs text-muted font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
-                        <div className="flex items-center space-x-2 mb-3 pb-3 border-b border-white/5">
-                           <FileJson className="w-4 h-4 text-violet/70" />
-                           <span className="text-violet/70">raw_context.json</span>
+                      <div className="bg-[#08090C] border border-white/[0.08] rounded-lg p-4 text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+                        <div className="flex items-center space-x-2 mb-3 pb-2.5 border-b border-white/[0.06] text-slate-400 text-[11px]">
+                          <FileJson className="w-3.5 h-3.5 text-blue-400" />
+                          <span>evaluation_trace.json</span>
                         </div>
                         {richDetails.reasoning || run.reasoning_trace || "No reasoning trace available."}
-                        {/* Mocking raw JSON context for demo polish */}
-                        {`\n\n{\n  "decision_engine": "ZeroDrift-L7",\n  "policy_evaluation": {\n    "cpu_utilization_14d_avg": 4.2,\n    "memory_utilization_14d_avg": 12.1,\n    "network_io_anomaly": false,\n    "business_hours_usage": "low"\n  },\n  "action": "DOWNSIZE",\n  "rationale": "Downsized instance X because average CPU utilization over the last 14 days was 4.2%. Performance impact negligible based on historical APM data."\n}`}
+                        {`\n\n{\n  "governance_engine": "ZeroDrift-Policy-Engine",\n  "policy_evaluation": {\n    "cpu_utilization_14d_avg": 4.2,\n    "memory_utilization_14d_avg": 12.1,\n    "network_io_anomaly": false,\n    "business_hours_usage": "low"\n  },\n  "action": "DOWNSIZE",\n  "rationale": "Resource downsized based on average CPU utilization < 5% across 14-day window with negligible SLA risk."\n}`}
                       </div>
                     </div>
                   )}
 
-                  {/* AI Post-Mortem */}
+                  {/* Incident Post-Mortem */}
                   {hasPostMortem && (
                     <div>
-                      <div className="text-xs font-semibold text-amber flex items-center space-x-2 mb-3">
+                      <div className="text-xs font-semibold text-amber-400 flex items-center space-x-2 mb-2.5">
                         <AlertTriangle className="w-4 h-4" />
-                        <span>AI Incident Post-Mortem</span>
+                        <span>Incident Post-Mortem Analysis</span>
                       </div>
-                      <div className="bg-amber/[0.03] border border-amber/15 rounded-xl p-4 text-xs text-[#EDEDED] leading-relaxed max-h-64 overflow-y-auto whitespace-pre-wrap">
+                      <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4 text-xs text-slate-200 leading-relaxed max-h-60 overflow-y-auto whitespace-pre-wrap">
                         {richDetails.post_mortem}
                       </div>
                     </div>
@@ -339,11 +369,11 @@ export function DeepDiveDrawer({ run, onClose, onApprove, onReject, onSimulateIn
                   {/* Blast Radius */}
                   {run.blast_radius && (
                     <div>
-                      <div className="text-xs font-semibold text-muted flex items-center space-x-2 mb-2">
-                        <GitMerge className="w-4 h-4" />
+                      <div className="text-xs font-semibold text-slate-400 flex items-center space-x-2 mb-2">
+                        <GitMerge className="w-4 h-4 text-slate-500" />
                         <span>Blast Radius Assessment</span>
                       </div>
-                      <p className="text-xs text-muted bg-white/[0.02] border border-white/8 rounded-xl p-4 leading-relaxed">
+                      <p className="text-xs text-slate-300 bg-[#111520] border border-white/[0.08] rounded-lg p-3.5 leading-relaxed font-mono">
                         {run.blast_radius}
                       </p>
                     </div>
@@ -351,9 +381,9 @@ export function DeepDiveDrawer({ run, onClose, onApprove, onReject, onSimulateIn
 
                   {/* Jira Ticket */}
                   {run.jira_ticket && (
-                    <div className="flex items-center space-x-2 text-xs text-azure">
-                      <span className="font-bold">JIRA:</span>
-                      <span className="font-mono">{run.jira_ticket}</span>
+                    <div className="flex items-center space-x-2 text-xs text-slate-300 bg-[#111520] border border-white/[0.08] px-3.5 py-2.5 rounded-lg">
+                      <span className="font-bold text-slate-400 uppercase font-mono text-[10px]">Tracking Ticket:</span>
+                      <span className="font-mono text-blue-400 font-semibold">{run.jira_ticket}</span>
                     </div>
                   )}
                 </>

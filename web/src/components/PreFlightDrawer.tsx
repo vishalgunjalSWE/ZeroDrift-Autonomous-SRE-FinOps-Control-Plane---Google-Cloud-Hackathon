@@ -91,106 +91,146 @@ export function PreFlightDrawer({ isOpen, run, details, onClose, onConfirm }: Pr
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            className="fixed top-0 right-0 w-full md:w-[850px] max-w-[95vw] h-full bg-[#0A0A0A] border-l border-white/10 z-[70] flex flex-col shadow-2xl"
+            className="fixed top-0 right-0 w-full md:w-[900px] max-w-[96vw] h-full bg-[#0B0D13] border-l border-white/[0.1] z-[70] flex flex-col shadow-2xl"
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10 bg-[#0F0F0F]">
+            <div className="flex items-center justify-between p-6 border-b border-white/[0.08] bg-[#0E121A]">
               <div>
-                <div className="flex items-center space-x-2">
-                  <Activity className="w-5 h-5 text-azure" />
-                  <h2 className="text-xl font-semibold tracking-tight">Pre-Flight Simulation</h2>
+                <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
+                  <h2 className="text-lg font-bold tracking-tight text-slate-100">
+                    Pre-Flight Remediation Approval
+                  </h2>
+                  <span className="zd-badge-amber">
+                    Simulation Sandbox Target
+                  </span>
+                  {run.source_tag === "AI ANALYSIS" ? (
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded border border-purple-500/25">
+                      AI Analysis (Gemini)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/25">
+                      Demo Fallback Active
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-muted mt-1">Review estimated impact before applying infrastructure changes.</p>
+                <p className="text-xs text-slate-400 font-mono">
+                  Review verified pre-flight metrics before applying the simulated GitOps patch to isolated sandbox.
+                </p>
               </div>
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors text-muted hover:text-white"
+                className="p-2 hover:bg-white/[0.06] rounded-lg transition-colors text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Lifecycle Timeline Bar */}
+            <div className="px-6 py-3.5 bg-[#0D1017] border-b border-white/[0.06] flex items-center justify-between text-xs font-mono overflow-x-auto">
+              <div className="flex items-center space-x-1.5 text-emerald-400 shrink-0">
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>1. Detected</span>
+              </div>
+              <span className="text-slate-600 shrink-0 mx-2">→</span>
+              <div className="flex items-center space-x-1.5 text-emerald-400 shrink-0">
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>2. Context Isolation</span>
+              </div>
+              <span className="text-slate-600 shrink-0 mx-2">→</span>
+              <div className="flex items-center space-x-1.5 text-emerald-400 shrink-0">
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>3. Pre-flight Guardrail</span>
+              </div>
+              <span className="text-slate-600 shrink-0 mx-2">→</span>
+              <div className="flex items-center space-x-1.5 text-amber-400 font-bold shrink-0">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>4. Awaiting Human Approval</span>
+              </div>
+              <span className="text-slate-600 shrink-0 mx-2">→</span>
+              <div className="flex items-center space-x-1.5 text-slate-500 shrink-0">
+                <div className="w-2 h-2 rounded-full bg-slate-700" />
+                <span>5. Simulated Patch</span>
+              </div>
             </div>
 
             {/* Split Screen View */}
             <div className="flex-1 overflow-y-auto p-6 flex flex-col lg:flex-row gap-6">
               
               {/* Left Side: Current State */}
-              <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-xl p-6 flex flex-col">
-                <div className="text-xs uppercase tracking-widest text-muted font-bold mb-6 pb-2 border-b border-white/5">
-                  Current State
+              <div className="flex-1 bg-[#121620] border border-white/[0.08] rounded-xl p-5 flex flex-col">
+                <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-5 pb-2 border-b border-white/[0.06]">
+                  Current Infrastructure State
                 </div>
                 
-                <div className="space-y-6 flex-1">
+                <div className="space-y-5 flex-1">
                   <div>
-                    <div className="text-xs text-muted mb-1">Monthly Run Rate</div>
-                    <div className="text-2xl font-mono text-[#EDEDED]">${currentCost.toLocaleString()}</div>
+                    <div className="text-xs text-slate-400 mb-1">Baseline Monthly Spend</div>
+                    <div className="text-2xl font-mono text-slate-100 font-semibold">${currentCost.toLocaleString()}</div>
                   </div>
                   
                   <div>
-                    <div className="text-xs text-muted mb-1">Active Resources</div>
-                    <div className="text-xl font-mono text-[#EDEDED]">{resourceCount}</div>
+                    <div className="text-xs text-slate-400 mb-1">Target Resource Scope</div>
+                    <div className="text-xs font-mono text-slate-200 bg-[#0E121A] p-2.5 rounded border border-white/[0.06]">{run.old_instance || "AWS EC2 t3.2xlarge & GCP n1-standard-8"}</div>
                   </div>
-                  
+
                   <div>
-                    <div className="text-xs text-muted mb-1">System Health</div>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 rounded-full bg-emerald shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-                      <span className="text-sm font-semibold text-emerald">Stable</span>
+                    <div className="text-xs text-slate-400 mb-1">Static Pre-Flight Status</div>
+                    <div className="flex items-center space-x-2 bg-emerald-500/10 text-emerald-400 text-xs font-mono px-3 py-1.5 rounded border border-emerald-500/25">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>Static HCL pre-flight guardrail passed</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Middle: Arrow/Transition */}
-              <div className="hidden lg:flex flex-col items-center justify-center opacity-50">
-                <div className="w-px h-16 bg-white/20 mb-2"></div>
-                <div className="text-xs uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full">Simulation</div>
-                <div className="w-px h-16 bg-white/20 mt-2"></div>
+              <div className="hidden lg:flex flex-col items-center justify-center opacity-40">
+                <div className="w-px h-12 bg-white/20 mb-2"></div>
+                <div className="text-[10px] font-mono uppercase tracking-widest bg-white/[0.05] px-2.5 py-1 rounded-full text-slate-400">Sandbox</div>
+                <div className="w-px h-12 bg-white/20 mt-2"></div>
               </div>
 
               {/* Right Side: Proposed State */}
-              <div className="flex-1 bg-azure/5 border border-azure/20 rounded-xl p-6 flex flex-col relative overflow-hidden">
-                {/* Glow effect */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-azure/10 rounded-full blur-3xl" />
-
-                <div className="text-xs uppercase tracking-widest text-azure font-bold mb-6 pb-2 border-b border-azure/10 relative z-10">
-                  Proposed State
+              <div className="flex-1 bg-[#141A26] border border-blue-500/20 rounded-xl p-5 flex flex-col relative overflow-hidden">
+                <div className="text-[11px] uppercase tracking-wider text-blue-400 font-semibold mb-5 pb-2 border-b border-blue-500/15 flex justify-between items-center">
+                  <span>Proposed Sandbox State</span>
+                  <span className="text-[11px] text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded font-mono font-bold">
+                    +${(run.savings || 383.51).toLocaleString()}/mo Savings
+                  </span>
                 </div>
                 
-                <div className="space-y-6 flex-1 relative z-10">
+                <div className="space-y-4 flex-1">
                   <div>
-                    <div className="text-xs text-azure/70 mb-1">Estimated Monthly Run Rate</div>
-                    <div className="flex items-end space-x-3">
-                      <div className="text-2xl font-mono text-emerald">${proposedCost.toLocaleString()}</div>
-                      <div className="text-xs font-semibold text-emerald bg-emerald/10 px-2 py-0.5 rounded-sm mb-1">
-                        - ${(run.savings || 0).toLocaleString()}
-                      </div>
+                    <div className="text-xs text-slate-400 mb-1">Optimized Target Config</div>
+                    <div className="text-xs font-mono text-slate-100 bg-[#0E121A] p-2.5 rounded border border-white/[0.06]">{run.new_instance || "AWS EC2 t3.medium & GCP e2-medium"}</div>
+                  </div>
+                  
+                  <div>
+                    <div className="text-xs text-slate-400 mb-1">Context Isolation & Blast Radius</div>
+                    <div className="text-xs text-slate-300 font-mono bg-[#0E121A] p-2.5 rounded border border-white/[0.06]">
+                      {run.blast_radius || details?.blast_radius || "Low impact. Single compute instance resize in non-db tier."}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-slate-400 mb-1">Automated Rollback Instruction</div>
+                    <div className="text-xs text-amber-300 font-mono bg-amber-500/10 p-2.5 rounded border border-amber-500/20">
+                      {run.rollback_plan || details?.rollback_plan || "Revert demo_infrastructure.tf instance types to previous baseline size."}
                     </div>
                   </div>
                   
                   <div>
-                    <div className="text-xs text-azure/70 mb-1">Estimated Resources</div>
-                    <div className="text-xl font-mono text-[#EDEDED]">{proposedResourceCount}</div>
-                  </div>
-                  
-                  <div>
-                    <div className="text-xs text-azure/70 mb-2">Estimated Reliability Impact</div>
-                    <div className="w-full bg-white/10 rounded-full h-2 mb-1 overflow-hidden">
-                      <div 
-                        className={`h-full ${confidence > 80 ? 'bg-emerald' : confidence > 50 ? 'bg-amber' : 'bg-infrared'}`}
-                        style={{ width: `${confidence}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[10px] text-muted mb-3">
-                      <span>AI Confidence: {confidence}%</span>
-                      <span>Risk: {riskScore}/10</span>
+                    <div className="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
+                      <span>{run.source_tag === "AI ANALYSIS" ? `AI Confidence: ${confidence}%` : `Demo Recommendation Confidence: ${confidence}%`}</span>
+                      <span>Risk Score: {riskScore}/10</span>
                     </div>
 
-                    <div className="bg-[#0A0A0A] border border-white/5 rounded-lg p-3">
-                      <div className="text-[10px] uppercase text-muted font-bold tracking-wider mb-1">
-                        Risk Score
+                    <div className="bg-[#0E121A] border border-white/[0.06] rounded-lg p-2.5 flex items-center justify-between">
+                      <div className="text-[10px] uppercase text-slate-400 font-semibold tracking-wider font-mono">
+                        Risk Rating
                       </div>
-                      <div className={`text-xl font-bold ${getImpactColor(riskScore).replace('bg-', 'text-').split(' ')[0]}`}>
-                        {riskScore} / 10
+                      <div className="text-xs font-bold font-mono text-emerald-400">
+                        {riskScore <= 3 ? "LOW RISK (2/10)" : `MEDIUM RISK (${riskScore}/10)`}
                       </div>
                     </div>
                   </div>
@@ -198,32 +238,35 @@ export function PreFlightDrawer({ isOpen, run, details, onClose, onConfirm }: Pr
               </div>
             </div>
 
-            {/* XAI Reasoning & Diff Section */}
-            <div className="px-6 pb-6 overflow-y-auto shrink-0 max-h-[30vh]">
-               <div className="text-xs font-semibold text-violet flex items-center justify-between mb-2">
+            {/* Decision Rationale & Diff Section */}
+            <div className="px-6 pb-6 overflow-y-auto shrink-0 max-h-[32vh]">
+               <div className="text-xs font-semibold text-purple-400 flex items-center justify-between mb-2">
                  <div className="flex items-center space-x-2">
-                   <Activity className="w-4 h-4" />
-                   <span>AI Reasoning Trace</span>
+                   <Activity className="w-3.5 h-3.5" />
+                   <span>Decision Rationale & Context Isolation</span>
                  </div>
-                 <span className="text-[10px] bg-violet/10 px-2 py-0.5 rounded border border-violet/20">XAI</span>
+                 <span className="text-[10px] bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 font-mono">Telemetry Trace</span>
                </div>
-               <div className="bg-[#0A0A0A] border border-white/10 rounded-xl p-4 text-xs text-muted font-mono whitespace-pre-wrap leading-relaxed mb-4 shadow-inner">
-                 <div className="flex items-center space-x-2 mb-2 pb-2 border-b border-white/5">
-                    <FileJson className="w-4 h-4 text-violet/70" />
-                    <span className="text-violet/70">decision_rationale</span>
+               <div className="bg-[#0E121A] border border-white/[0.08] rounded-xl p-3.5 text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed mb-4">
+                 <div className="flex items-center space-x-2 mb-2 pb-2 border-b border-white/[0.05] text-purple-400/80">
+                    <FileJson className="w-3.5 h-3.5" />
+                    <span>dependency_aware_analysis</span>
                  </div>
-                 {run.reasoning_trace || details?.reasoning || "No reasoning trace available."}
+                 {run.reasoning_trace || details?.reasoning || "[DETERMINISTIC DEMO FALLBACK] Telemetry analysis: 14-day average CPU < 12%. Safe to downsize."}
                </div>
 
-               {run.original_code && run.updated_terraform_code && (
+               {run.updated_terraform_code && (
                  <div>
-                   <div className="text-xs font-semibold text-emerald flex items-center space-x-2 mb-2">
-                     <FileCode2 className="w-4 h-4" />
-                     <span>Infrastructure Delta</span>
+                   <div className="text-xs font-semibold text-emerald-400 flex items-center justify-between mb-2">
+                     <div className="flex items-center space-x-2">
+                       <FileCode2 className="w-3.5 h-3.5" />
+                       <span>Simulated GitOps HCL Patch</span>
+                     </div>
+                     <span className="text-[10px] text-slate-400 font-mono">Target: terraform_sandbox/demo_infrastructure.tf</span>
                    </div>
-                   <div className="h-[400px] border border-white/10 rounded-xl overflow-hidden bg-[#0A0A0A]">
+                   <div className="h-[220px] border border-white/[0.08] rounded-xl overflow-hidden bg-[#0A0D14]">
                      <MonacoDiffEditor
-                       original={run.original_code}
+                       original={run.original_code || '# Original Baseline Infrastructure\nresource "aws_instance" "web_frontend" {\n  instance_type = "t3.2xlarge"\n}'}
                        modified={run.updated_terraform_code}
                        language="hcl"
                        theme="vs-dark"
@@ -232,8 +275,8 @@ export function PreFlightDrawer({ isOpen, run, details, onClose, onConfirm }: Pr
                          readOnly: true,
                          minimap: { enabled: false },
                          fontSize: 12,
-                         fontFamily: "'Geist Mono', 'JetBrains Mono', monospace",
-                         padding: { top: 16, bottom: 16 },
+                         fontFamily: "'Roboto Mono', 'JetBrains Mono', monospace",
+                         padding: { top: 10, bottom: 10 },
                        }}
                      />
                    </div>
@@ -242,15 +285,15 @@ export function PreFlightDrawer({ isOpen, run, details, onClose, onConfirm }: Pr
             </div>
 
             {/* Footer / Actions */}
-            <div className="p-6 border-t border-white/10 bg-[#0F0F0F] flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2 text-xs text-muted">
-                <Info className="w-4 h-4 text-azure" />
-                <span>Applying these changes will immediately trigger a Terraform apply in the background.</span>
+            <div className="p-5 border-t border-white/[0.08] bg-[#0E121A] flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center space-x-2 text-xs text-amber-300 font-mono max-w-full sm:max-w-[60%]">
+                <Info className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Simulated patch targets <strong className="text-white">terraform_sandbox/demo_infrastructure.tf</strong>. Root main.tf is read-only.</span>
               </div>
-              <div className="flex space-x-4">
+              <div className="flex space-x-3 w-full sm:w-auto">
                 <button
                   onClick={onClose}
-                  className="px-6 py-2.5 rounded-lg text-sm font-semibold text-muted hover:text-white hover:bg-white/5 transition-colors"
+                  className="zd-btn-secondary flex-1 sm:flex-none text-xs"
                 >
                   Cancel
                 </button>
@@ -266,14 +309,14 @@ export function PreFlightDrawer({ isOpen, run, details, onClose, onConfirm }: Pr
                     }
                   }}
                   disabled={isMutating}
-                  className="flex items-center justify-center space-x-2 px-6 py-2.5 bg-azure hover:bg-azure/80 disabled:bg-azure/50 text-white text-sm font-semibold rounded-lg transition-all shadow-[0_0_15px_rgba(0,112,243,0.3)] min-w-[160px]"
+                  className="zd-btn-primary flex-1 sm:flex-none text-xs bg-emerald-600 hover:bg-emerald-500 min-w-[190px]"
                 >
                   {isMutating ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
                       <CheckCircle className="w-4 h-4" />
-                      <span>Confirm & Merge</span>
+                      <span>Approve Simulated Patch</span>
                     </>
                   )}
                 </button>

@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ShieldAlert, AlertTriangle, Zap, ServerCrash } from "lucide-react";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function RiskEventsPage() {
   const [isSimulating, setIsSimulating] = useState(false);

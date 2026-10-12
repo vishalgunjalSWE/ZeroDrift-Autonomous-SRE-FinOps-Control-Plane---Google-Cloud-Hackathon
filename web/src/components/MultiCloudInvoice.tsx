@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Cloud, Server, Loader2, Database } from "lucide-react";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 interface CloudInvoice {
   aws: number;

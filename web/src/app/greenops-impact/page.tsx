@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Leaf, Wind, TreePine, Droplets, Loader2, Sparkles } from "lucide-react";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function GreenOpsImpactPage() {
   const { data: metrics, isLoading } = useQuery<any>({

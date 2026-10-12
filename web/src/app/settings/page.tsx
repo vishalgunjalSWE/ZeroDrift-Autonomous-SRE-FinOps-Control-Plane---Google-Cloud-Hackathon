@@ -16,10 +16,12 @@ export default function SettingsPage() {
   
   const router = useRouter();
 
+  const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/v1/workspace-settings");
+        const res = await fetch(`${BACKEND}/api/v1/workspace-settings`);
         if (res.ok) {
           const data = await res.json();
           setWorkspaceName(data.workspaceName);
@@ -38,7 +40,7 @@ export default function SettingsPage() {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/workspace-settings", {
+      const res = await fetch(`${BACKEND}/api/v1/workspace-settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceName, dataRetention }),
@@ -59,7 +61,7 @@ export default function SettingsPage() {
     
     setDeleting(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/workspace", {
+      const res = await fetch(`${BACKEND}/api/v1/workspace`, {
         method: "DELETE",
       });
       if (res.ok) {

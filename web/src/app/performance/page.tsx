@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Zap, Activity, Clock, Cpu, BarChart3, Database } from "lucide-react";
 import { format } from "date-fns";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function PerformancePage() {
   const { data: metrics, isLoading } = useQuery<any>({

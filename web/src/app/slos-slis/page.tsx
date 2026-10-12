@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Target, CheckCircle2, AlertOctagon } from "lucide-react";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function SLOsPage() {
   const { data: metrics } = useQuery<any>({

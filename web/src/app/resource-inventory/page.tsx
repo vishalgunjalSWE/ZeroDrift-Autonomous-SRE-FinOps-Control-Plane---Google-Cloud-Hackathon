@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Database, Search, Filter, Loader2, AlertTriangle, ShieldCheck } from "lucide-react";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function ResourceInventoryPage() {
   const [searchTerm, setSearchTerm] = useState("");

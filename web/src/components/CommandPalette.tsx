@@ -34,7 +34,7 @@ export function CommandPalette() {
   }, [isOpen]);
 
   const actions = [
-    { id: "sweep", label: "Sweep Global (Initiate Run)", icon: triggerManual.isPending ? <Loader2 className="w-4 h-4 text-azure animate-spin" /> : <Terminal className="w-4 h-4 text-azure" /> },
+    { id: "sweep", label: "Initiate Simulation Sweep (On-Demand)", icon: triggerManual.isPending ? <Loader2 className="w-4 h-4 text-azure animate-spin" /> : <Terminal className="w-4 h-4 text-azure" /> },
     { id: "simulate", label: "Simulate Black Friday Traffic Spike", icon: simulateIncident.isPending ? <Loader2 className="w-4 h-4 text-red-500 animate-spin" /> : <AlertTriangle className="w-4 h-4 text-red-500" /> },
     { id: "drift", label: "Show Global Drift", icon: <Search className="w-4 h-4 text-emerald" /> },
     { id: "approve", label: "Review Pending Approvals", icon: <GitMerge className="w-4 h-4 text-amber" /> },

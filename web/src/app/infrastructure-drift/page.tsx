@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, GitCommit, Search, PlusCircle, MinusCircle, Hash } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function InfrastructureDriftPage() {
   const { data: drift, isLoading } = useQuery<any>({

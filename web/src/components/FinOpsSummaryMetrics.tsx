@@ -5,7 +5,7 @@ import { DollarSign, ShieldCheck, Leaf, AlertCircle, TrendingUp, TrendingDown, M
 import { motion } from "framer-motion";
 import { DriftGauge } from "./DriftGauge";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 interface MetricsSummary {
   total_cost_savings: number;
@@ -83,44 +83,50 @@ interface KPICardProps {
   icon: React.ReactNode;
   accentColor: string;
   sparkline?: number[];
+  sparklineLabel?: string;
 }
 
-function KPICard({ label, value, sub, trend, icon, accentColor, sparkline }: KPICardProps) {
+function KPICard({ label, value, sub, trend, icon, accentColor, sparkline, sparklineLabel }: KPICardProps) {
   const TrendIcon =
     trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
   const trendColor =
-    trend === "up" ? "text-emerald" : trend === "down" ? "text-infrared" : "text-muted";
+    trend === "up" ? "text-emerald-400" : trend === "down" ? "text-amber-400" : "text-slate-400";
 
   return (
-    <motion.div 
-      whileHover={{ scale: 1.02, y: -4 }}
-      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-      className="glass-card rounded-xl p-5 border border-white/5 relative overflow-hidden group hover:border-white/10 cursor-pointer"
-    >
-      {/* Background icon watermark */}
-      <div className="absolute top-0 right-0 p-4 opacity-[0.06] group-hover:opacity-[0.1] transition-opacity">
-        <div className={`w-16 h-16 ${accentColor}`}>{icon}</div>
-      </div>
+    <div className="zd-card p-5 border border-white/[0.08] relative overflow-hidden bg-[#11151E] hover:border-white/[0.14] transition-colors flex flex-col justify-between">
+      <div>
+        {/* Label */}
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+            {label}
+          </span>
+          <div className="w-4 h-4 text-slate-500">{icon}</div>
+        </div>
 
-      {/* Label */}
-      <div className="text-[11px] font-semibold text-muted uppercase tracking-wider mb-3">
-        {label}
-      </div>
-
-      {/* Value */}
-      <div className="text-4xl font-light tracking-tight text-[#EDEDED] mb-2">
-        {value}
+        {/* Value */}
+        <div className="text-3xl font-semibold tracking-tight text-slate-100 font-mono mb-2">
+          {value}
+        </div>
       </div>
 
       {/* Sub row */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pt-2 border-t border-white/[0.05] mt-2">
         <div className={`flex items-center space-x-1.5 text-xs font-medium ${trendColor}`}>
-          <TrendIcon className="w-3 h-3" />
-          <span>{sub}</span>
+          <TrendIcon className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">{sub}</span>
         </div>
-        {sparkline && <Sparkline data={sparkline} />}
+        {sparkline && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {sparklineLabel && (
+              <span className="text-[9px] font-mono text-slate-500 tracking-wider uppercase">
+                {sparklineLabel}
+              </span>
+            )}
+            <Sparkline data={sparkline} />
+          </div>
+        )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -164,32 +170,32 @@ export function FinOpsSummaryMetrics() {
       }}
       className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 lg:gap-4 mb-8"
     >
-      {/* KPI 1: Cost Avoidance */}
+      {/* KPI 1: Projected monthly savings */}
       <motion.div variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}>
         <KPICard
-          label="Cost Avoidance (MRR)"
+          label="Projected monthly savings"
           value={`$${data.total_cost_savings.toLocaleString("en-US", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           })}`}
-          sub="46.4% vs last 30 days"
+          sub="+46.4% vs 30d baseline"
           trend="up"
           icon={<DollarSign className="w-full h-full" />}
           accentColor="text-azure"
           sparkline={data.savings_sparkline}
+          sparklineLabel="Demo baseline"
         />
       </motion.div>
 
-      {/* KPI 2: Auto-Remediations */}
+      {/* KPI 2: Simulated Remediations */}
       <motion.div variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}>
         <KPICard
-          label="Auto-Remediations"
+          label="Simulated Remediations"
           value={`${data.success_runs} / ${data.total_runs}`}
-          sub="1 MRs merged"
+          sub={`${data.merged_runs} simulated patches merged`}
           trend="up"
           icon={<ShieldCheck className="w-full h-full" />}
           accentColor="text-violet"
-          sparkline={data.savings_sparkline} // Using mock for now
         />
       </motion.div>
 
@@ -201,24 +207,22 @@ export function FinOpsSummaryMetrics() {
             minimumFractionDigits: 1,
             maximumFractionDigits: 1,
           })} kg`}
-          sub="18.2% vs last 30 days"
+          sub={`~${Math.round(data.carbon_avoided_kg / 4.54).toLocaleString()} trees equivalent`}
           trend="up"
           icon={<Leaf className="w-full h-full" />}
           accentColor="text-emerald"
-          sparkline={data.savings_sparkline}
         />
       </motion.div>
 
-      {/* KPI 4: Risk Events / MTTR */}
+      {/* KPI 4: High-Risk Anomalies */}
       <motion.div variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}>
         <KPICard
-          label="Risk Events / MTTR"
+          label="High-Risk Anomalies"
           value={`${data.high_risk_events}`}
-          sub="All clear"
-          trend="neutral"
+          sub={data.high_risk_events === 0 ? "0 high blast-radius risks" : `${data.high_risk_events} quarantined for review`}
+          trend={data.high_risk_events === 0 ? "neutral" : "down"}
           icon={<AlertCircle className="w-full h-full" />}
           accentColor="text-amber"
-          sparkline={data.savings_sparkline}
         />
       </motion.div>
 

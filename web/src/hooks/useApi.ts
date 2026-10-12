@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-const BACKEND = 'http://localhost:8000';
+export const BACKEND = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
 
 // Fetch Global Drift Index
 export const useGlobalDrift = () => {
@@ -24,6 +24,19 @@ export const usePendingApprovals = () => {
       if (!res.ok) throw new Error('Failed to fetch pending approvals');
       return res.json();
     },
+    refetchInterval: 3000,
+  });
+};
+
+// Fetch Append-Only Audit Events
+export const useAuditEvents = () => {
+  return useQuery({
+    queryKey: ['audit-events'],
+    queryFn: async () => {
+      const res = await fetch(`${BACKEND}/api/v1/audit-events`);
+      if (!res.ok) throw new Error('Failed to fetch audit events');
+      return res.json();
+    },
     refetchInterval: 5000,
   });
 };
@@ -43,6 +56,9 @@ export const useApproveMR = () => {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       queryClient.invalidateQueries({ queryKey: ['global-drift'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-events'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-ledger'] });
     },
   });
 };
@@ -62,6 +78,9 @@ export const useRejectMR = () => {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       queryClient.invalidateQueries({ queryKey: ['global-drift'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-events'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-ledger'] });
     },
   });
 };
@@ -81,6 +100,8 @@ export const useSimulateIncident = () => {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['runs'] });
       queryClient.invalidateQueries({ queryKey: ['global-drift'] });
+      queryClient.invalidateQueries({ queryKey: ['metrics-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-events'] });
     },
   });
 };
@@ -98,6 +119,9 @@ export const useTriggerManual = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['runs'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-events'] });
     }
   });
 };
+

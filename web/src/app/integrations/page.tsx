@@ -1,10 +1,10 @@
 "use client";
 
-import { Boxes, Cloud, CheckCircle, XCircle, Settings2, X, Key, Link as LinkIcon, RefreshCw, Trash2, Check, AlertCircle, Info } from "lucide-react";
+import { Boxes, Cloud, CheckCircle, XCircle, Settings2, X, Key, Link as LinkIcon, RefreshCw, Trash2, Check, AlertCircle, Info, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 function Activity(props: any) {
   return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
@@ -20,6 +20,17 @@ function SlackIcon(props: any) {
 }
 
 const INTEGRATIONS_CONFIG = [
+  {
+    id: "gemini",
+    name: "Google Gemini 2.5 Flash",
+    icon: <Sparkles className="w-8 h-8 text-[#A855F7]" />,
+    type: "AI & Structured Reasoning",
+    placeholder: "AIzaSy...",
+    hint: "Google Gemini API Key for live LLM reasoning",
+    endpointLabel: "",
+    endpointPlaceholder: "",
+    docsUrl: "https://ai.google.dev/",
+  },
   {
     id: "aws",
     name: "AWS Cloud Control",
@@ -118,12 +129,32 @@ export default function IntegrationsPage() {
   const backendStatus: Record<string, any> = statusData?.integrations ?? {};
 
   // Merge static config with real backend status
-  const integrations = INTEGRATIONS_CONFIG.map(cfg => ({
-    ...cfg,
-    status: backendStatus[cfg.id]?.status === "CONNECTED" ? "CONNECTED" : "NOT_CONFIGURED",
-    detail: backendStatus[cfg.id]?.detail ?? "",
-    connected_at: backendStatus[cfg.id]?.connected_at ?? "",
-  }));
+  const integrations = INTEGRATIONS_CONFIG.map(cfg => {
+    const bState = backendStatus[cfg.id];
+    let status = "NOT_CONFIGURED";
+    let detail = cfg.hint;
+
+    if (bState?.status === "CONNECTED") {
+      status = "CONNECTED";
+      detail = bState.detail || "Credentials verified live via API";
+    } else if (cfg.id === "gemini" && (!bState || bState.status === "DEMO_FALLBACK")) {
+      status = "DEMO_FALLBACK";
+      detail = "Demo fallback active — deterministic SRE recommendations";
+    } else {
+      if (cfg.id === "gitlab" || cfg.id === "github") {
+        detail = "Not connected — credentials required · Live GitOps unavailable in local simulation";
+      } else {
+        detail = "Not connected — credentials required";
+      }
+    }
+
+    return {
+      ...cfg,
+      status,
+      detail,
+      connected_at: bState?.connected_at ?? "",
+    };
+  });
 
   const connectMutation = useMutation({
     mutationFn: async ({ id, key, ep }: { id: string; key: string; ep: string }) => {
@@ -199,60 +230,75 @@ export default function IntegrationsPage() {
 
   return (
     <main className="p-6 lg:p-10 max-w-[1800px] mx-auto w-full h-full flex flex-col space-y-8 relative">
-      <div className="border-b border-white/10 pb-6 shrink-0 flex justify-between items-end">
+      <div className="border-b border-white/[0.08] pb-6 shrink-0 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center">
-            <Boxes className="w-6 h-6 mr-3 text-violet" />
-            Integrations
+          <div className="flex items-center space-x-2 text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5">
+            <span>Control Plane</span>
+            <span>/</span>
+            <span className="text-white">External Ecosystem</span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center">
+            <Boxes className="w-6 h-6 mr-3 text-blue-500" />
+            Integrations & Connectors
           </h1>
-          <p className="text-muted text-[13px] mt-2">
-            Connect ZeroDrift to your existing cloud, VCS, and observability stack.
+          <p className="text-slate-400 text-sm mt-1.5">
+            Cryptographic status of cloud providers, GitOps repositories, and APM channels.
           </p>
         </div>
-        <div className="text-[11px] text-muted font-mono flex items-center space-x-2 bg-white/[0.02] border border-white/10 px-3 py-1.5 rounded-lg">
-          <span className={`w-1.5 h-1.5 rounded-full ${statusLoading ? "bg-amber-400 animate-pulse" : "bg-emerald"}`} />
-          <span>{Object.keys(backendStatus).filter(k => backendStatus[k]?.status === "CONNECTED").length} / {integrations.length} connected — credentials validated live</span>
+        <div className="text-xs text-slate-300 font-mono flex items-center space-x-2.5 bg-[#0E121B] border border-white/[0.08] px-3.5 py-2 rounded-lg shrink-0">
+          <span className={`w-2 h-2 rounded-full ${statusLoading ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
+          <span>{Object.keys(backendStatus).filter(k => backendStatus[k]?.status === "CONNECTED").length} of {integrations.length} Connected · Credentials Verified</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {integrations.map((integration) => (
-          <div key={integration.id} className="glass-card rounded-xl p-6 border border-white/5 flex flex-col group hover:bg-white/[0.02] transition-colors relative overflow-hidden">
-            <div className="flex items-center justify-between mb-6">
-              <div className="p-3 bg-white/5 rounded-xl border border-white/10">
+          <div key={integration.id} className="zd-card p-6 flex flex-col group transition-all relative overflow-hidden">
+            <div className="flex items-start justify-between mb-5">
+              <div className="w-12 h-12 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center">
                 {integration.icon}
               </div>
-              <button onClick={() => openConfig(integration)} className="text-muted hover:text-white transition-colors">
-                <Settings2 className="w-5 h-5" />
+              <button
+                onClick={() => openConfig(integration)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+                title="Configure connector"
+              >
+                <Settings2 className="w-4 h-4" />
               </button>
             </div>
 
-            <h3 className="text-lg font-semibold text-white mb-1">{integration.name}</h3>
-            <p className="text-xs text-muted font-mono mb-2">{integration.type}</p>
-            {integration.detail && integration.status === "CONNECTED" && (
-              <p className="text-[10px] text-muted/70 truncate mb-3 font-mono">{integration.detail}</p>
-            )}
+            <div className="mb-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-white tracking-tight">{integration.name}</h3>
+              </div>
+              <p className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mt-0.5">{integration.type}</p>
+              {integration.detail && (
+                <p className="text-xs text-slate-400 mt-2.5 leading-relaxed line-clamp-2">{integration.detail}</p>
+              )}
+            </div>
 
-            <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between">
+            <div className="mt-auto pt-4 border-t border-white/[0.06] flex items-center justify-between gap-3">
               {integration.status === "CONNECTED" ? (
-                <span className="flex items-center text-xs font-bold text-emerald tracking-widest uppercase">
-                  <CheckCircle className="w-4 h-4 mr-2" /> Connected
+                <span className="zd-badge zd-badge-emerald">
+                  <CheckCircle className="w-3 h-3 mr-1.5" /> Connected
+                </span>
+              ) : integration.status === "DEMO_FALLBACK" ? (
+                <span className="zd-badge zd-badge-amber">
+                  <Info className="w-3 h-3 mr-1.5" /> Demo fallback active
                 </span>
               ) : (
-                <span className="flex items-center text-xs font-bold text-muted tracking-widest uppercase">
-                  <XCircle className="w-4 h-4 mr-2 opacity-50" /> Not Configured
+                <span className="zd-badge zd-badge-neutral">
+                  <XCircle className="w-3 h-3 mr-1.5" /> Credentials required
                 </span>
               )}
 
               <button
                 onClick={() => openConfig(integration)}
-                className={`px-4 py-1.5 rounded text-xs font-bold transition-colors ${
-                  integration.status === "CONNECTED"
-                    ? "bg-white/5 text-white hover:bg-white/10"
-                    : "bg-azure text-white hover:bg-azure/80"
+                className={`text-xs px-3 py-1.5 rounded-md font-medium transition-colors ${
+                  integration.status === "CONNECTED" ? "zd-btn zd-btn-secondary" : "zd-btn zd-btn-primary"
                 }`}
               >
-                {integration.status === "CONNECTED" ? "Manage" : "Connect"}
+                {integration.status === "CONNECTED" ? "Manage" : "Configure"}
               </button>
             </div>
           </div>
@@ -264,20 +310,20 @@ export default function IntegrationsPage() {
         <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm">
           <div className="absolute inset-0" onClick={closeModal} />
 
-          <div className="relative w-full max-w-md h-full bg-[#0A0A0B] border-l border-white/10 shadow-2xl flex flex-col">
+          <div className="relative w-full max-w-md h-full bg-[#0B0D13] border-l border-white/[0.08] shadow-2xl flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-white/5 rounded-lg border border-white/10">
+            <div className="flex items-center justify-between p-6 border-b border-white/[0.08] bg-[#0E121B]">
+              <div className="flex items-center space-x-3.5">
+                <div className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center">
                   {activeModal.icon}
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white leading-tight">{activeModal.name}</h2>
-                  <p className="text-xs text-muted">{activeModal.type}</p>
+                  <h2 className="text-base font-semibold text-white tracking-tight leading-tight">{activeModal.name}</h2>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">{activeModal.type}</p>
                 </div>
               </div>
-              <button onClick={closeModal} className="p-2 text-muted hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-                <X className="w-5 h-5" />
+              <button onClick={closeModal} className="p-1.5 text-slate-400 hover:text-white hover:bg-white/[0.06] rounded-lg transition-colors">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -285,22 +331,22 @@ export default function IntegrationsPage() {
 
               {/* Success state after connect */}
               {successDetail && (
-                <div className="p-4 bg-emerald/10 border border-emerald/20 rounded-xl flex items-start space-x-3">
-                  <Check className="w-5 h-5 text-emerald shrink-0 mt-0.5" />
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-start space-x-3">
+                  <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-sm font-bold text-emerald">Credential Validated ✓</div>
-                    <div className="text-xs text-emerald/80 mt-1 font-mono">{successDetail}</div>
+                    <div className="text-xs font-semibold text-emerald-400">Credential Validated</div>
+                    <div className="text-xs text-emerald-300/80 mt-1 font-mono">{successDetail}</div>
                   </div>
                 </div>
               )}
 
               {/* Error banner */}
               {errorMsg && (
-                <div className="p-4 bg-infrared/10 border border-infrared/20 rounded-xl flex items-start space-x-3">
-                  <AlertCircle className="w-5 h-5 text-infrared shrink-0 mt-0.5" />
+                <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-lg flex items-start space-x-3">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-sm font-bold text-infrared">Validation Failed</div>
-                    <div className="text-xs text-infrared/80 mt-1">{errorMsg}</div>
+                    <div className="text-xs font-semibold text-rose-400">Validation Failed</div>
+                    <div className="text-xs text-rose-300/80 mt-1">{errorMsg}</div>
                   </div>
                 </div>
               )}
@@ -308,27 +354,27 @@ export default function IntegrationsPage() {
               {activeModal.status === "CONNECTED" && !successDetail ? (
                 /* CONNECTED STATE */
                 <div className="space-y-4">
-                  <div className="p-4 bg-emerald/10 border border-emerald/20 rounded-xl flex items-start space-x-3">
-                    <CheckCircle className="w-5 h-5 text-emerald shrink-0 mt-0.5" />
+                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-start space-x-3">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                     <div>
-                      <div className="text-sm font-bold text-emerald">Live Connection Active</div>
-                      <div className="text-xs text-emerald/80 mt-1 font-mono">{activeModal.detail || "Credentials verified via API."}</div>
+                      <div className="text-xs font-semibold text-emerald-400">Live Connection Active</div>
+                      <div className="text-xs text-emerald-300/80 mt-1 font-mono">{activeModal.detail || "Credentials verified via API."}</div>
                     </div>
                   </div>
 
                   <button
                     onClick={() => testMutation.mutate(activeModal.id)}
-                    className="w-full flex items-center justify-center space-x-2 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm font-semibold text-white transition-colors"
+                    className="zd-btn zd-btn-secondary w-full py-2.5 flex items-center justify-center space-x-2 text-xs"
                   >
-                    {testResult === "testing" ? <RefreshCw className="w-4 h-4 animate-spin" /> : testResult === "ok" ? <Check className="w-4 h-4 text-emerald" /> : <LinkIcon className="w-4 h-4" />}
-                    <span>{testResult === "testing" ? "Testing..." : testResult === "ok" ? "Connection OK" : "Test Connection"}</span>
+                    {testResult === "testing" ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : testResult === "ok" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                    <span>{testResult === "testing" ? "Testing connection..." : testResult === "ok" ? "Connection Verified" : "Test Connection"}</span>
                   </button>
 
                   <button
                     onClick={() => disconnectMutation.mutate(activeModal.id)}
-                    className="w-full flex items-center justify-center space-x-2 py-3 bg-infrared/10 hover:bg-infrared/20 border border-infrared/20 rounded-lg text-sm font-semibold text-infrared transition-colors"
+                    className="zd-btn zd-btn-danger w-full py-2.5 flex items-center justify-center space-x-2 text-xs"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                     <span>Disconnect Integration</span>
                   </button>
                 </div>
@@ -336,28 +382,30 @@ export default function IntegrationsPage() {
                 /* NOT CONFIGURED STATE */
                 <div className="space-y-5">
                   {/* How to get key hint */}
-                  <div className="flex items-start space-x-2 p-3 bg-azure/5 border border-azure/20 rounded-lg">
-                    <Info className="w-4 h-4 text-azure shrink-0 mt-0.5" />
-                    <div className="text-xs text-muted">
+                  <div className="flex items-start space-x-2.5 p-3.5 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+                    <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                    <div className="text-xs text-slate-300 leading-relaxed">
                       {activeModal.hint}
                       {" · "}
-                      <a href={activeModal.docsUrl} target="_blank" rel="noreferrer" className="text-azure hover:underline">Docs ↗</a>
+                      <a href={activeModal.docsUrl} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline inline-flex items-center">
+                        Docs ↗
+                      </a>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-[#EDEDED]">
+                    <label className="text-xs font-medium text-slate-300">
                       {activeModal.id === "gcp" ? "Service Account JSON" : "API Key / Token"}
                     </label>
                     <div className="relative">
-                      <Key className="w-4 h-4 absolute left-3 top-3 text-muted" />
+                      <Key className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
                       {activeModal.id === "gcp" ? (
                         <textarea
                           rows={5}
                           placeholder={activeModal.placeholder}
                           value={apiKey}
                           onChange={e => { setApiKey(e.target.value); setErrorMsg(""); }}
-                          className="w-full bg-white/[0.02] border border-white/10 rounded-lg pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-azure transition-colors font-mono resize-none"
+                          className="w-full bg-[#08090C] border border-white/[0.08] rounded-lg pl-9 pr-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors font-mono resize-none"
                         />
                       ) : (
                         <input
@@ -365,7 +413,7 @@ export default function IntegrationsPage() {
                           placeholder={activeModal.placeholder}
                           value={apiKey}
                           onChange={e => { setApiKey(e.target.value); setErrorMsg(""); }}
-                          className="w-full bg-white/[0.02] border border-white/10 rounded-lg pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-azure transition-colors"
+                          className="w-full bg-[#08090C] border border-white/[0.08] rounded-lg pl-9 pr-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors font-mono"
                         />
                       )}
                     </div>
@@ -373,31 +421,31 @@ export default function IntegrationsPage() {
 
                   {activeModal.endpointLabel && (
                     <div className="space-y-2">
-                      <label className="text-xs font-semibold text-[#EDEDED]">{activeModal.endpointLabel}</label>
+                      <label className="text-xs font-medium text-slate-300">{activeModal.endpointLabel}</label>
                       <div className="relative">
-                        <LinkIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                        <LinkIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                         <input
                           type="text"
                           placeholder={activeModal.endpointPlaceholder}
                           value={endpoint}
                           onChange={e => setEndpoint(e.target.value)}
-                          className="w-full bg-white/[0.02] border border-white/10 rounded-lg pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-azure transition-colors"
+                          className="w-full bg-[#08090C] border border-white/[0.08] rounded-lg pl-9 pr-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-blue-500 transition-colors font-mono"
                         />
                       </div>
                     </div>
                   )}
 
-                  <div className="pt-2 border-t border-white/10">
+                  <div className="pt-3 border-t border-white/[0.08]">
                     <button
                       onClick={() => connectMutation.mutate({ id: activeModal.id, key: apiKey, ep: endpoint })}
                       disabled={connectMutation.isPending || !apiKey.trim()}
-                      className="w-full flex items-center justify-center space-x-2 py-3 bg-azure hover:bg-azure/80 rounded-lg text-sm font-semibold text-white transition-colors shadow-[0_0_15px_rgba(0,112,243,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="zd-btn zd-btn-primary w-full py-2.5 flex items-center justify-center space-x-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {connectMutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                      {connectMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
                       <span>{connectMutation.isPending ? "Validating credentials..." : "Validate & Connect"}</span>
                     </button>
-                    <p className="text-center text-[10px] text-muted mt-3">
-                      ZeroDrift calls the provider's API directly to verify your credentials. Keys are stored in memory only and never written to disk.
+                    <p className="text-center text-[11px] text-slate-500 mt-3 leading-relaxed">
+                      ZeroDrift validates credentials against the provider API. Keys are held in-memory and not stored persistently.
                     </p>
                   </div>
                 </div>

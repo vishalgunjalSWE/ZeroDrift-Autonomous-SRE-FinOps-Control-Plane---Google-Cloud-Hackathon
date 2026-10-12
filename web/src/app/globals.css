@@ -1,24 +1,32 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", "Geist", "SF Pro Display", sans-serif;
-  --font-mono: "Roboto Mono", monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Roboto Mono", "JetBrains Mono", monospace;
   
-  --color-obsidian: #0A0A0A;
-  --color-obsidian-surface: #111111;
-  --color-obsidian-border: #222222;
-  --color-azure: #0070F3;
+  --color-obsidian: #08090C;
+  --color-obsidian-surface: #10141D;
+  --color-obsidian-border: rgba(255, 255, 255, 0.08);
+  --color-azure: #2563EB;
   --color-emerald: #10B981;
-  --color-amber: #FEBC2E;
-  --color-infrared: #FF5F57;
-  --color-violet: #8A2BE2;
+  --color-amber: #F59E0B;
+  --color-infrared: #EF4444;
+  --color-violet: #8B5CF6;
 }
 
 @layer base {
   :root {
-    --background: #0A0A0A;
-    --foreground: #EDEDED;
-    --muted: #888888;
+    --background: #08090C;
+    --foreground: #F8FAFC;
+    --muted: #94A3B8;
+    --muted-dark: #64748B;
+    --border-subtle: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --surface-base: #08090C;
+    --surface-subtle: #0D1017;
+    --surface-card: #121620;
+    --surface-card-hover: #171C28;
+    --surface-active: #1D2332;
   }
   
   body {
@@ -26,49 +34,203 @@
     color: var(--foreground);
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.011em;
   }
 }
 
 @layer utilities {
   .glass {
-    background: var(--color-obsidian-surface);
-    border: 1px solid var(--color-obsidian-border);
+    background: #0E121A;
+    border: 1px solid var(--border-subtle);
   }
   
   .glass-card {
-    background: var(--color-obsidian-surface);
-    border: 1px solid var(--color-obsidian-border);
-    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+    background: #11151E;
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
   }
   
+  .zd-card {
+    background: #11151E;
+    border: 1px solid var(--border-subtle);
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .zd-card-interactive {
+    background: #11151E;
+    border: 1px solid var(--border-subtle);
+    border-radius: 0.75rem;
+    transition: all 0.15s ease;
+  }
+  .zd-card-interactive:hover {
+    background: #151A26;
+    border-color: var(--border-strong);
+  }
+
   .ambient-glow {
-    position: absolute;
-    width: 600px;
-    height: 600px;
-    background: radial-gradient(circle, rgba(0, 112, 243, 0.15) 0%, rgba(10, 10, 10, 0) 70%);
-    pointer-events: none;
-    z-index: -1;
+    display: none;
+  }
+
+  /* Button Hierarchy */
+  .zd-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    color: #FFFFFF;
+    background-color: #2563EB;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+    cursor: pointer;
+  }
+  .zd-btn-primary:hover:not(:disabled) {
+    background-color: #1D4ED8;
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+  .zd-btn-primary:active:not(:disabled) {
+    transform: scale(0.99);
+  }
+  .zd-btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .zd-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    color: #F8FAFC;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: 0.5rem;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+    cursor: pointer;
+  }
+  .zd-btn-secondary:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.09);
+    border-color: var(--border-strong);
+  }
+
+  .zd-btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    color: #FCA5A5;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 0.5rem;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+    cursor: pointer;
+  }
+  .zd-btn-danger:hover:not(:disabled) {
+    background-color: rgba(239, 68, 68, 0.18);
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+
+  /* Status Badges */
+  .zd-badge-emerald {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #34D399;
+    background-color: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: 0.375rem;
+  }
+
+  .zd-badge-amber {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #FBBF24;
+    background-color: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 0.375rem;
+  }
+
+  .zd-badge-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #F87171;
+    background-color: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 0.375rem;
+  }
+
+  .zd-badge-neutral {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    color: #94A3B8;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.375rem;
   }
 }
 
-/* Custom Scrollbar for SSE Logs */
+/* Accessible focus ring */
+*:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-@keyframes shimmer {
-  100% {
-    transform: translateX(100%);
-  }
+  background: rgba(255, 255, 255, 0.22);
 }

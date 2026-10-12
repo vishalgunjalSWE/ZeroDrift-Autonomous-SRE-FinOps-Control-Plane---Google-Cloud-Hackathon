@@ -8,7 +8,7 @@ import { Loader2, AlertTriangle, ShieldCheck } from "lucide-react";
 // react-gauge-component might not be SSR compatible, so we load it dynamically
 const GaugeComponent = dynamic(() => import("react-gauge-component"), { ssr: false });
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export function DriftGauge() {
   const { data: driftData, isLoading, isError } = useGlobalDrift();

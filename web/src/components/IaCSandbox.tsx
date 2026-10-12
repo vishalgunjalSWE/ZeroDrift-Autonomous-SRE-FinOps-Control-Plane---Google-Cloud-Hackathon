@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react";
 import { Save, RefreshCw, Box } from "lucide-react";
 
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
+
 export function IaCSandbox() {
   const [code, setCode] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/iac")
+    fetch(`${BACKEND}/api/iac`)
       .then(res => res.json())
       .then(data => setCode(data.code))
       .catch(e => console.error("Failed to load IaC code", e));
@@ -17,7 +19,7 @@ export function IaCSandbox() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await fetch("http://localhost:8000/api/iac", {
+      await fetch(`${BACKEND}/api/iac`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code })
@@ -30,8 +32,8 @@ export function IaCSandbox() {
 
   const handleReset = async () => {
     try {
-      await fetch("http://localhost:8000/api/iac/reset", { method: "POST" });
-      const res = await fetch("http://localhost:8000/api/iac");
+      await fetch(`${BACKEND}/api/iac/reset`, { method: "POST" });
+      const res = await fetch(`${BACKEND}/api/iac`);
       const data = await res.json();
       setCode(data.code);
     } catch (e) {

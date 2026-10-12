@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ServerCrash, FileText, ChevronDown, ChevronUp, Loader2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
-const BACKEND = "http://localhost:8000";
+const BACKEND = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export default function IncidentsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
